@@ -13,7 +13,7 @@ done
 rm -R work 
 rm urls
 
-find chocolib -name *.nupkg | head -n 1 | while read pkg 
+find chocolib -name *.nupkg | while read pkg 
 do 
     file $pkg
     dir=$(dirname $pkg)
@@ -36,5 +36,6 @@ do
     zip -r ../${basename} *
     # ....
     cd ..
-    # rm -R work 
+    mv ${basename}.zip $pkg
+    rm -R work 
 done
