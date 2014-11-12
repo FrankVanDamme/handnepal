@@ -13,29 +13,34 @@ done
 rm -R work 
 rm urls
 
-find chocolib -name *.nupkg | while read pkg 
+find /home/shared/chocolatey/lib -iname '*.nupkg' | while read pkg 
 do 
-    file $pkg
     dir=$(dirname $pkg)
     basename=$(basename $pkg)
+    echo ZIP file: $basename
+#########continue
     mkdir work
     rm      ${basename}.zip
-    cp $pkg ${basename}.zip
+    echo copying...
+    cp -v $pkg ${basename}.zip
+    echo ... ok 
     cd work
-    unzip ../${basename}.zip
+    unzip -q ../${basename}.zip
 
     find -name '*.ps1' | while read ps1file
     do
+	echo PS1 FILE $ps1file found
 	fromdos "$ps1file"
 	grep -o "'http.*'" "$ps1file"   >> ../urls
 	sed -i -e 's/http.*\/\([^\/]*$\)/s:\\chocolat\\packages\\\1/' "$ps1file" 
 	todos "$ps1file"
     done
-    read ee
-    rm ../${basename}.zip
-    zip -r ../${basename} *
+    zip -qr ../${basename} *
     # ....
     cd ..
-    mv ${basename}.zip $pkg
+    mv urls "urls$(date +%F_%U-%M)"
+    mv -v ${basename} $pkg 
+    rm  ${basename}.zip 
     rm -R work 
 done
+rm nupkgs
