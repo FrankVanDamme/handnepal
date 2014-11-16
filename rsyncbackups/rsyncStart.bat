@@ -1,0 +1,1 @@
+start /wait /min /belownormal cscript.exe rsyncBackup.vbs

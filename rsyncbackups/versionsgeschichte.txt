@@ -1,0 +1,54 @@
+
+    rsyncBackup.vbs 1.04                         Autor: Karsten Violka ct@ct.de
+    c't 9/06
+
+
+Version 1.05 01.07.10  Am Skript selbst hat sich nichts geändert, aber das Paket
+                       enthält jetzt eine rsync.exe samt cygwin-Bibliotheken,
+                       die auch unter Windows Vista und 7 funktionieren.
+
+
+Version 1.04 11.08.06	 Die Umgebungsvariable cygwin=nontsec wird jetzt direkt
+                       im VB-Skript gesetzt. Damit ist sichergestellt, dass
+                       Cygwin die Zugriffsrechte der Backup-Ordner nicht
+                       verändert.
+
+                       Im Paket ist jetzt die rsync-Version 2.6.8 enthalten.
+                       Einige Leser hatten berichtet, dass die zuvor
+                       mitgelieferte Version Dateien mit sehr langen Pfadnamen
+                       einfach übersprungen hatte, ohne einen Eintrag in der
+                       Log-Datei zu hinterlassen.
+
+                       Bugfix: Die Routine sourceChanged() liefert auch dann das
+                       richtige Ergebnis, wenn mehrere Quellpfade konfiguriert
+                       sind.
+
+
+Version 1.03 10.05.06  Das Skript stellt dem Schnappschussordner, in den rsync
+                       sichert, zunächst eine Tilde voran. Erst wenn rsync die
+                       Sicherung abgeschlossen hat, entfernt das Skript die
+                       Tilde.
+
+                       Die Funktion callCmd funktioniert jetzt auch, wenn der
+                       Name des Benutzerkontos ein &-Zeichen enthält.
+
+                       Mit der Konstante FULL_PATHNAMES können Sie mehrere
+                       gleichnamige Quellverzeichnisse sichern.
+
+
+Version 1.01 19.04.06  rsync erstellt jetzt keine zusätzlichen Backup-Dateien
+                       mehr, die auf "~" enden. (Schalter "b" entfernt, Funktion
+                       removePathLines() hinzugefügt.)
+
+
+Version 1.00 14.04.06  Erste veröffentlichte Version
+
+--------------------------------------------------------------------------------
+ Bekannte Probleme:
+   -- rsync kopiert keine geöffneten Dateien
+   -- rsync kopiert nur Pfade bis zu einer Länge von 260 Zeichen.
+   -- rsync kopiert keine NTFS-Spezialitäten (Junctions, Streams, Sparse Files)
+
+ Skript mit niedriger Priorität starten: 
+ 	start /min /belownormal cscript.exe rsyncBackup.vbs
+--------------------------------------------------------------------------------

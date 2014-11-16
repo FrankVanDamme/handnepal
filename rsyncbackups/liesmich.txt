@@ -1,0 +1,13 @@
+Fix verknüpft
+Hard-Link-Backups für Windows
+---------------------------------------
+c't 09/06, S. 126 (kav)
+
+rsyncbackup.vbs		Backup-Skript
+
+Das Programm rsync und die nötigen Bibliotheneken haben wir der Windows-Distribution
+Cygwin www.cygwin.com entnommen.
+
+Die Software unterliegt der GNU General Public License (GPL).
+
+Rsync-Homepage: http://samba.org/rsync/

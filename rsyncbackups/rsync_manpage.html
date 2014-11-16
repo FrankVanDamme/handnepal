@@ -1,0 +1,2146 @@
+<html><head><title>rsync</title>
+
+
+
+
+
+
+<link rev="made" href="mailto:rsync-bugs@samba.org"></head><body>
+
+<hr>
+
+<h1>rsync</h1>
+<h2>11 Mar 2006</h2>
+
+
+    
+<h2>NAME</h2>
+    rsync - faster, flexible replacement for rcp
+<h2>SYNOPSIS</h2>
+    
+<p>rsync [OPTION]... SRC [SRC]... DEST
+</p><p>rsync [OPTION]... SRC [SRC]... [USER@]HOST:DEST
+</p><p>rsync [OPTION]... SRC [SRC]... [USER@]HOST::DEST
+</p><p>rsync [OPTION]... SRC [SRC]... rsync://[USER@]HOST[:PORT]/DEST
+</p><p>rsync [OPTION]... SRC
+</p><p>rsync [OPTION]... [USER@]HOST:SRC [DEST]
+</p><p>rsync [OPTION]... [USER@]HOST::SRC [DEST]
+</p><p>rsync [OPTION]... rsync://[USER@]HOST[:PORT]/SRC [DEST]
+</p><p></p><h2>DESCRIPTION</h2>
+    
+<p>rsync is a program that behaves in much the same way that rcp does,
+but has many more options and uses the rsync remote-update protocol to
+greatly speed up file transfers when the destination file is being
+updated.
+</p><p>The rsync remote-update protocol allows rsync to transfer just the
+differences between two sets of files across the network connection, using
+an efficient checksum-search algorithm described in the technical
+report that accompanies this package.
+</p><p>Some of the additional features of rsync are:
+</p><p></p><ul>
+  <li> support for copying links, devices, owners, groups, and permissions
+  </li><li> exclude and exclude-from options similar to GNU tar
+  </li><li> a CVS exclude mode for ignoring the same files that CVS would ignore
+  </li><li> can use any transparent remote shell, including ssh or rsh
+  </li><li> does not require super-user privileges
+  </li><li> pipelining of file transfers to minimize latency costs
+  </li><li> support for anonymous or authenticated rsync daemons (ideal for
+       mirroring)
+</li></ul>
+<p></p><h2>GENERAL</h2>
+    
+<p>Rsync copies files either to or from a remote host, or locally on the
+current host (it does not support copying files between two remote hosts).
+</p><p>There are two different ways for rsync to contact a remote system: using a
+remote-shell program as the transport (such as ssh or rsh) or contacting an
+rsync daemon directly via TCP.  The remote-shell transport is used whenever
+the source or destination path contains a single colon (:) separator after
+a host specification.  Contacting an rsync daemon directly happens when the
+source or destination path contains a double colon (::) separator after a
+host specification, OR when an rsync:// URL is specified (see also the
+"USING RSYNC-DAEMON FEATURES VIA A REMOTE-SHELL CONNECTION" section for
+an exception to this latter rule).
+</p><p>As a special case, if a single source arg is specified without a
+destination, the files are listed in an output format similar to "ls -l".
+</p><p>As expected, if neither the source or destination path specify a remote
+host, the copy occurs locally (see also the <strong>--list-only</strong> option).
+</p><p></p><h2>SETUP</h2>
+    
+<p>See the file README for installation instructions.
+</p><p>Once installed, you can use rsync to any machine that you can access via
+a remote shell (as well as some that you can access using the rsync
+daemon-mode protocol).  For remote transfers, a modern rsync uses ssh
+for its communications, but it may have been configured to use a
+different remote shell by default, such as rsh or remsh.
+</p><p>You can also specify any remote shell you like, either by using the <strong>-e</strong>
+command line option, or by setting the RSYNC_RSH environment variable.
+</p><p>Note that rsync must be installed on both the source and destination
+machines.
+</p><p></p><h2>USAGE</h2>
+    
+<p>You use rsync in the same way you use rcp. You must specify a source
+and a destination, one of which may be remote.
+</p><p>Perhaps the best way to explain the syntax is with some examples:
+</p><p></p><blockquote><code>rsync -t *.c foo:src/</code></blockquote>
+<p>This would transfer all files matching the pattern *.c from the
+current directory to the directory src on the machine foo. If any of
+the files already exist on the remote system then the rsync
+remote-update protocol is used to update the file by sending only the
+differences. See the tech report for details.
+</p><p></p><blockquote><code>rsync -avz foo:src/bar /data/tmp</code></blockquote>
+<p>This would recursively transfer all files from the directory src/bar on the
+machine foo into the /data/tmp/bar directory on the local machine. The
+files are transferred in "archive" mode, which ensures that symbolic
+links, devices, attributes, permissions, ownerships, etc. are preserved
+in the transfer.  Additionally, compression will be used to reduce the
+size of data portions of the transfer.
+</p><p></p><blockquote><code>rsync -avz foo:src/bar/ /data/tmp</code></blockquote>
+<p>A trailing slash on the source changes this behavior to avoid creating an
+additional directory level at the destination.  You can think of a trailing
+/ on a source as meaning "copy the contents of this directory" as opposed
+to "copy the directory by name", but in both cases the attributes of the
+containing directory are transferred to the containing directory on the
+destination.  In other words, each of the following commands copies the
+files in the same way, including their setting of the attributes of
+/dest/foo:
+</p><p></p><blockquote>
+<code>rsync -av /src/foo /dest</code><br>
+<code>rsync -av /src/foo/ /dest/foo</code><br>
+</blockquote>
+<p>Note also that host and module references don't require a trailing slash to
+copy the contents of the default directory.  For example, both of these
+copy the remote directory's contents into "/dest":
+</p><p></p><blockquote>
+<code>rsync -av host: /dest</code><br>
+<code>rsync -av host::module /dest</code><br>
+</blockquote>
+<p>You can also use rsync in local-only mode, where both the source and
+destination don't have a ':' in the name. In this case it behaves like
+an improved copy command.
+</p><p>Finally, you can list all the (listable) modules available from a
+particular rsync daemon by leaving off the module name:
+</p><p></p><blockquote><code>rsync somehost.mydomain.com::</code></blockquote>
+<p>See the following section for more details.
+</p><p></p><h2>ADVANCED USAGE</h2>
+    
+<p>The syntax for requesting multiple files from a remote host involves using
+quoted spaces in the SRC.  Some examples:
+</p><p></p><blockquote><code>rsync host::'modname/dir1/file1 modname/dir2/file2' /dest</code></blockquote>
+<p>This would copy file1 and file2 into /dest from an rsync daemon.  Each
+additional arg must include the same "modname/" prefix as the first one,
+and must be preceded by a single space.  All other spaces are assumed
+to be a part of the filenames.
+</p><p></p><blockquote><code>rsync -av host:'dir1/file1 dir2/file2' /dest</code></blockquote>
+<p>This would copy file1 and file2 into /dest using a remote shell.  This
+word-splitting is done by the remote shell, so if it doesn't work it means
+that the remote shell isn't configured to split its args based on
+whitespace (a very rare setting, but not unknown).  If you need to transfer
+a filename that contains whitespace, you'll need to either escape the
+whitespace in a way that the remote shell will understand, or use wildcards
+in place of the spaces.  Two examples of this are:
+</p><p></p><blockquote>
+<code>rsync -av host:'file\ name\ with\ spaces' /dest</code><br>
+<code>rsync -av host:file?name?with?spaces /dest</code><br>
+</blockquote>
+<p>This latter example assumes that your shell passes through unmatched
+wildcards.  If it complains about "no match", put the name in quotes.
+</p><p></p><h2>CONNECTING TO AN RSYNC DAEMON</h2>
+    
+<p>It is also possible to use rsync without a remote shell as the transport.
+In this case you will directly connect to a remote rsync daemon, typically
+using TCP port 873.  (This obviously requires the daemon to be running on
+the remote system, so refer to the STARTING AN RSYNC DAEMON TO ACCEPT
+CONNECTIONS section below for information on that.)
+</p><p>Using rsync in this way is the same as using it with a remote shell except
+that:
+</p><p></p><ul>
+	<li> you either use a double colon :: instead of a single colon to
+	separate the hostname from the path, or you use an rsync:// URL.
+	</li><li> the first word of the "path" is actually a module name.
+	</li><li> the remote daemon may print a message of the day when you
+	connect.
+	</li><li> if you specify no path name on the remote daemon then the
+	list of accessible paths on the daemon will be shown.
+	</li><li> if you specify no local destination then a listing of the
+	specified files on the remote daemon is provided.
+	</li><li> you must not specify the <strong>--rsh</strong> (<strong>-e</strong>) option.
+</li></ul>
+<p>An example that copies all the files in a remote module named "src":
+</p><p></p><pre>    rsync -av host::src /dest
+</pre>
+
+<p>Some modules on the remote daemon may require authentication. If so,
+you will receive a password prompt when you connect. You can avoid the
+password prompt by setting the environment variable RSYNC_PASSWORD to
+the password you want to use or using the <strong>--password-file</strong> option. This
+may be useful when scripting rsync.
+</p><p>WARNING: On some systems environment variables are visible to all
+users. On those systems using <strong>--password-file</strong> is recommended.
+</p><p>You may establish the connection via a web proxy by setting the
+environment variable RSYNC_PROXY to a hostname:port pair pointing to
+your web proxy.  Note that your web proxy's configuration must support
+proxy connections to port 873.
+</p><p></p><h2>USING RSYNC-DAEMON FEATURES VIA A REMOTE-SHELL CONNECTION</h2>
+    
+<p>It is sometimes useful to use various features of an rsync daemon (such as
+named modules) without actually allowing any new socket connections into a
+system (other than what is already required to allow remote-shell access).
+Rsync supports connecting to a host using a remote shell and then spawning
+a single-use "daemon" server that expects to read its config file in the
+home dir of the remote user.  This can be useful if you want to encrypt a
+daemon-style transfer's data, but since the daemon is started up fresh by
+the remote user, you may not be able to use features such as chroot or
+change the uid used by the daemon.  (For another way to encrypt a daemon
+transfer, consider using ssh to tunnel a local port to a remote machine and
+configure a normal rsync daemon on that remote host to only allow
+connections from "localhost".)
+</p><p>From the user's perspective, a daemon transfer via a remote-shell
+connection uses nearly the same command-line syntax as a normal
+rsync-daemon transfer, with the only exception being that you must
+explicitly set the remote shell program on the command-line with the
+<strong>--rsh=COMMAND</strong> option.  (Setting the RSYNC_RSH in the environment
+will not turn on this functionality.)  For example:
+</p><p></p><pre>    rsync -av --rsh=ssh host::module /dest
+</pre>
+
+<p>If you need to specify a different remote-shell user, keep in mind that the
+user@ prefix in front of the host is specifying the rsync-user value (for a
+module that requires user-based authentication).  This means that you must
+give the '-l user' option to ssh when specifying the remote-shell, as in
+this example that uses the short version of the <strong>--rsh</strong> option:
+</p><p></p><pre>    rsync -av -e "ssh -l ssh-user" rsync-user@host::module /dest
+</pre>
+
+<p>The "ssh-user" will be used at the ssh level; the "rsync-user" will be
+used to log-in to the "module".
+</p><p></p><h2>STARTING AN RSYNC DAEMON TO ACCEPT CONNECTIONS</h2>
+    
+<p>In order to connect to an rsync daemon, the remote system needs to have a
+daemon already running (or it needs to have configured something like inetd
+to spawn an rsync daemon for incoming connections on a particular port).
+For full information on how to start a daemon that will handling incoming
+socket connections, see the rsyncd.conf(5) man page -- that is the config
+file for the daemon, and it contains the full details for how to run the
+daemon (including stand-alone and inetd configurations).
+</p><p>If you're using one of the remote-shell transports for the transfer, there is
+no need to manually start an rsync daemon.
+</p><p></p><h2>EXAMPLES</h2>
+    
+<p>Here are some examples of how I use rsync.
+</p><p>To backup my wife's home directory, which consists of large MS Word
+files and mail folders, I use a cron job that runs
+</p><p></p><blockquote><code>rsync -Cavz . arvidsjaur:backup</code></blockquote>
+<p>each night over a PPP connection to a duplicate directory on my machine
+"arvidsjaur".
+</p><p>To synchronize my samba source trees I use the following Makefile
+targets:
+</p><p></p><pre>    get:
+            rsync -avuzb --exclude '*~' samba:samba/ .
+    put:
+            rsync -Cavuzb . samba:samba/
+    sync: get put
+</pre>
+
+<p>this allows me to sync with a CVS directory at the other end of the
+connection. I then do CVS operations on the remote machine, which saves a
+lot of time as the remote CVS protocol isn't very efficient.
+</p><p>I mirror a directory between my "old" and "new" ftp sites with the
+command:
+</p><p><code>rsync -az -e ssh --delete ~ftp/pub/samba nimbus:"~ftp/pub/tridge"</code>
+</p><p>This is launched from cron every few hours.
+</p><p></p><h2>OPTIONS SUMMARY</h2>
+    
+<p>Here is a short summary of the options available in rsync. Please refer
+to the detailed description below for a complete description.  </p><pre>
+ -v, --verbose               increase verbosity
+ -q, --quiet                 suppress non-error messages
+ -c, --checksum              skip based on checksum, not mod-time &amp; size
+ -a, --archive               archive mode; same as -rlptgoD (no -H)
+     --no-OPTION             turn off an implied OPTION (e.g. --no-D)
+ -r, --recursive             recurse into directories
+ -R, --relative              use relative path names
+     --no-implied-dirs       don't send implied dirs with --relative
+ -b, --backup                make backups (see --suffix &amp; --backup-dir)
+     --backup-dir=DIR        make backups into hierarchy based in DIR
+     --suffix=SUFFIX         backup suffix (default ~ w/o --backup-dir)
+ -u, --update                skip files that are newer on the receiver
+     --inplace               update destination files in-place
+     --append                append data onto shorter files
+ -d, --dirs                  transfer directories without recursing
+ -l, --links                 copy symlinks as symlinks
+ -L, --copy-links            transform symlink into referent file/dir
+     --copy-unsafe-links     only "unsafe" symlinks are transformed
+     --safe-links            ignore symlinks that point outside the tree
+ -k, --copy-dirlinks         transform symlink to dir into referent dir
+ -K, --keep-dirlinks         treat symlinked dir on receiver as dir
+ -H, --hard-links            preserve hard links
+ -p, --perms                 preserve permissions
+ -E, --executability         preserve executability
+     --chmod=CHMOD           change destination permissions
+ -o, --owner                 preserve owner (super-user only)
+ -g, --group                 preserve group
+     --devices               preserve device files (super-user only)
+     --specials              preserve special files
+ -D                          same as --devices --specials
+ -t, --times                 preserve times
+ -O, --omit-dir-times        omit directories when preserving times
+     --super                 receiver attempts super-user activities
+ -S, --sparse                handle sparse files efficiently
+ -n, --dry-run               show what would have been transferred
+ -W, --whole-file            copy files whole (without rsync algorithm)
+ -x, --one-file-system       don't cross filesystem boundaries
+ -B, --block-size=SIZE       force a fixed checksum block-size
+ -e, --rsh=COMMAND           specify the remote shell to use
+     --rsync-path=PROGRAM    specify the rsync to run on remote machine
+     --existing              ignore non-existing files on receiving side
+     --ignore-existing       ignore files that already exist on receiver
+     --remove-sent-files     sent files/symlinks are removed from sender
+     --del                   an alias for --delete-during
+     --delete                delete files that don't exist on sender
+     --delete-before         receiver deletes before transfer (default)
+     --delete-during         receiver deletes during xfer, not before
+     --delete-after          receiver deletes after transfer, not before
+     --delete-excluded       also delete excluded files on receiver
+     --ignore-errors         delete even if there are I/O errors
+     --force                 force deletion of dirs even if not empty
+     --max-delete=NUM        don't delete more than NUM files
+     --max-size=SIZE         don't transfer any file larger than SIZE
+     --min-size=SIZE         don't transfer any file smaller than SIZE
+     --partial               keep partially transferred files
+     --partial-dir=DIR       put a partially transferred file into DIR
+     --delay-updates         put all updated files into place at end
+ -m, --prune-empty-dirs      prune empty directory chains from file-list
+     --numeric-ids           don't map uid/gid values by user/group name
+     --timeout=TIME          set I/O timeout in seconds
+ -I, --ignore-times          don't skip files that match size and time
+     --size-only             skip files that match in size
+     --modify-window=NUM     compare mod-times with reduced accuracy
+ -T, --temp-dir=DIR          create temporary files in directory DIR
+ -y, --fuzzy                 find similar file for basis if no dest file
+     --compare-dest=DIR      also compare received files relative to DIR
+     --copy-dest=DIR         ... and include copies of unchanged files
+     --link-dest=DIR         hardlink to files in DIR when unchanged
+ -z, --compress              compress file data during the transfer
+     --compress-level=NUM    explicitly set compression level
+ -C, --cvs-exclude           auto-ignore files in the same way CVS does
+ -f, --filter=RULE           add a file-filtering RULE
+ -F                          same as --filter='dir-merge /.rsync-filter'
+                             repeated: --filter='- .rsync-filter'
+     --exclude=PATTERN       exclude files matching PATTERN
+     --exclude-from=FILE     read exclude patterns from FILE
+     --include=PATTERN       don't exclude files matching PATTERN
+     --include-from=FILE     read include patterns from FILE
+     --files-from=FILE       read list of source-file names from FILE
+ -0, --from0                 all *from/filter files are delimited by 0s
+     --address=ADDRESS       bind address for outgoing socket to daemon
+     --port=PORT             specify double-colon alternate port number
+     --sockopts=OPTIONS      specify custom TCP options
+     --blocking-io           use blocking I/O for the remote shell
+     --stats                 give some file-transfer stats
+ -8, --8-bit-output          leave high-bit chars unescaped in output
+ -h, --human-readable        output numbers in a human-readable format
+     --progress              show progress during transfer
+ -P                          same as --partial --progress
+ -i, --itemize-changes       output a change-summary for all updates
+     --log-format=FORMAT     output filenames using the specified format
+     --password-file=FILE    read password from FILE
+     --list-only             list the files instead of copying them
+     --bwlimit=KBPS          limit I/O bandwidth; KBytes per second
+     --write-batch=FILE      write a batched update to FILE
+     --only-write-batch=FILE like --write-batch but w/o updating dest
+     --read-batch=FILE       read a batched update from FILE
+     --protocol=NUM          force an older protocol version to be used
+     --checksum-seed=NUM     set block/file checksum seed (advanced)
+ -4, --ipv4                  prefer IPv4
+ -6, --ipv6                  prefer IPv6
+     --version               print version number
+(-h) --help                  show this help (see below for -h comment)
+
+</pre>
+
+<p>Rsync can also be run as a daemon, in which case the following options are
+accepted: </p><pre>
+     --daemon                run as an rsync daemon
+     --address=ADDRESS       bind to the specified address
+     --bwlimit=KBPS          limit I/O bandwidth; KBytes per second
+     --config=FILE           specify alternate rsyncd.conf file
+     --no-detach             do not detach from the parent
+     --port=PORT             listen on alternate port number
+     --sockopts=OPTIONS      specify custom TCP options
+ -v, --verbose               increase verbosity
+ -4, --ipv4                  prefer IPv4
+ -6, --ipv6                  prefer IPv6
+ -h, --help                  show this help (if used after --daemon)
+
+</pre>
+
+<p></p><h2>OPTIONS</h2>
+    
+<p>rsync uses the GNU long options package. Many of the command line
+options have two variants, one short and one long.  These are shown
+below, separated by commas. Some options only have a long variant.
+The '=' for options that take a parameter is optional; whitespace
+can be used instead.
+</p><p></p><dl>
+<p></p><dt><strong><strong>--help</strong></strong></dt><dd> Print a short help page describing the options
+available in rsync and exit.  For backward-compatibility with older
+versions of rsync, the help will also be output if you use the <strong>-h</strong>
+option without any other args.
+<p></p><p></p></dd><dt><strong><strong>--version</strong></strong></dt><dd> print the rsync version number and exit.
+<p></p><p></p></dd><dt><strong><strong>-v, --verbose</strong></strong></dt><dd> This option increases the amount of information you
+are given during the transfer.  By default, rsync works silently. A
+single <strong>-v</strong> will give you information about what files are being
+transferred and a brief summary at the end. Two <strong>-v</strong> flags will give you
+information on what files are being skipped and slightly more
+information at the end. More than two <strong>-v</strong> flags should only be used if
+you are debugging rsync.
+<p>Note that the names of the transferred files that are output are done using
+a default <strong>--log-format</strong> of "%n%L", which tells you just the name of the
+file and, if the item is a link, where it points.  At the single <strong>-v</strong>
+level of verbosity, this does not mention when a file gets its attributes
+changed.  If you ask for an itemized list of changed attributes (either
+<strong>--itemize-changes</strong> or adding "%i" to the <strong>--log-format</strong> setting), the
+output (on the client) increases to mention all items that are changed in
+any way.  See the <strong>--log-format</strong> option for more details.
+</p><p></p><p></p></dd><dt><strong><strong>-q, --quiet</strong></strong></dt><dd> This option decreases the amount of information you
+are given during the transfer, notably suppressing information messages
+from the remote server. This flag is useful when invoking rsync from
+cron.
+<p></p><p></p></dd><dt><strong><strong>-I, --ignore-times</strong></strong></dt><dd> Normally rsync will skip any files that are
+already the same size and have the same modification time-stamp.
+This option turns off this "quick check" behavior.
+<p></p><p></p></dd><dt><strong><strong>--size-only</strong></strong></dt><dd> Normally rsync will not transfer any files that are
+already the same size and have the same modification time-stamp. With the
+<strong>--size-only</strong> option, files will not be transferred if they have the same size,
+regardless of timestamp. This is useful when starting to use rsync
+after using another mirroring system which may not preserve timestamps
+exactly.
+<p></p><p></p></dd><dt><strong><strong>--modify-window</strong></strong></dt><dd> When comparing two timestamps, rsync treats the
+timestamps as being equal if they differ by no more than the modify-window
+value.  This is normally 0 (for an exact match), but you may find it useful
+to set this to a larger value in some situations.  In particular, when
+transferring to or from an MS Windows FAT filesystem (which represents
+times with a 2-second resolution), <strong>--modify-window=1</strong> is useful
+(allowing times to differ by up to 1 second).
+<p></p><p></p></dd><dt><strong><strong>-c, --checksum</strong></strong></dt><dd> This forces the sender to checksum <em>every</em>
+regular file using a 128-bit MD4 checksum.  It does this during the initial
+file-system scan as it builds the list of all available files. The receiver
+then checksums its version of each file (if it exists and it has the same
+size as its sender-side counterpart) in order to decide which files need to
+be updated: files with either a changed size or a changed checksum are
+selected for transfer.  Since this whole-file checksumming of all files on
+both sides of the connection occurs in addition to the automatic checksum
+verifications that occur during a file's transfer, this option can be quite
+slow.
+<p>Note that rsync always verifies that each <em>transferred</em> file was correctly
+reconstructed on the receiving side by checking its whole-file checksum, but
+that automatic after-the-transfer verification has nothing to do with this
+option's before-the-transfer "Does this file need to be updated?" check.
+</p><p></p><p></p></dd><dt><strong><strong>-a, --archive</strong></strong></dt><dd> This is equivalent to <strong>-rlptgoD</strong>. It is a quick
+way of saying you want recursion and want to preserve almost
+everything (with -H being a notable omission).
+The only exception to the above equivalence is when <strong>--files-from</strong> is
+specified, in which case <strong>-r</strong> is not implied.
+<p>Note that <strong>-a</strong> <strong>does not preserve hardlinks</strong>, because
+finding multiply-linked files is expensive.  You must separately
+specify <strong>-H</strong>.
+</p><p></p><p></p></dd><dt><strong>--no-OPTION</strong></dt><dd> You may turn off one or more implied options by prefixing
+the option name with "no-".  Not all options may be prefixed with a "no-":
+only options that are implied by other options (e.g. <strong>--no-D</strong>,
+<strong>--no-perms</strong>) or have different defaults in various circumstances
+(e.g. <strong>--no-whole-file</strong>, <strong>--no-blocking-io</strong>, <strong>--no-dirs</strong>).  You may
+specify either the short or the long option name after the "no-" prefix
+(e.g. <strong>--no-R</strong> is the same as <strong>--no-relative</strong>).
+<p>For example: if you want to use <strong>-a</strong> (<strong>--archive</strong>) but don't want
+<strong>-o</strong> (<strong>--owner</strong>), instead of converting <strong>-a</strong> into <strong>-rlptgD</strong>, you
+could specify <strong>-a --no-o</strong> (or <strong>-a --no-owner</strong>).
+</p><p>The order of the options is important:  if you specify <strong>--no-r -a</strong>, the
+<strong>-r</strong> option would end up being turned on, the opposite of <strong>-a --no-r</strong>.
+Note also that the side-effects of the <strong>--files-from</strong> option are NOT
+positional, as it affects the default state of several options and slightly
+changes the meaning of <strong>-a</strong> (see the <strong>--files-from</strong> option for more
+details).
+</p><p></p><p></p></dd><dt><strong><strong>-r, --recursive</strong></strong></dt><dd> This tells rsync to copy directories
+recursively.  See also <strong>--dirs</strong> (<strong>-d</strong>).
+<p></p><p></p></dd><dt><strong><strong>-R, --relative</strong></strong></dt><dd> Use relative paths. This means that the full path
+names specified on the command line are sent to the server rather than
+just the last parts of the filenames. This is particularly useful when
+you want to send several different directories at the same time. For
+example, if you used this command:
+<p></p><blockquote><code>   rsync -av /foo/bar/baz.c remote:/tmp/</code></blockquote>
+<p>... this would create a file named baz.c in /tmp/ on the remote
+machine. If instead you used
+</p><p></p><blockquote><code>   rsync -avR /foo/bar/baz.c remote:/tmp/</code></blockquote>
+<p>then a file named /tmp/foo/bar/baz.c would be created on the remote
+machine -- the full path name is preserved.  To limit the amount of
+path information that is sent, you have a couple options:  (1) With
+a modern rsync on the sending side (beginning with 2.6.7), you can
+insert a dot and a slash into the source path, like this:
+</p><p></p><blockquote><code>   rsync -avR /foo/./bar/baz.c remote:/tmp/</code></blockquote>
+<p>That would create /tmp/bar/baz.c on the remote machine.  (Note that the
+dot must be followed by a slash, so "/foo/." would not be abbreviated.)
+(2) For older rsync versions, you would need to use a chdir to limit the
+source path.  For example, when pushing files:
+</p><p></p><blockquote><code>   (cd /foo; rsync -avR bar/baz.c remote:/tmp/) </code></blockquote>
+<p>(Note that the parens put the two commands into a sub-shell, so that the
+"cd" command doesn't remain in effect for future commands.)
+If you're pulling files, use this idiom (which doesn't work with an
+rsync daemon):
+</p><p></p><blockquote>
+<code>   rsync -avR --rsync-path="cd /foo; rsync" \ </code><br>
+<code>       remote:bar/baz.c /tmp/</code>
+</blockquote>
+<p></p><p></p></dd><dt><strong><strong>--no-implied-dirs</strong></strong></dt><dd> This option affects the default behavior of the
+<strong>--relative</strong> option.  When it is specified, the attributes of the implied
+directories from the source names are not included in the transfer.  This
+means that the corresponding path elements on the destination system are
+left unchanged if they exist, and any missing implied directories are
+created with default attributes.  This even allows these implied path
+elements to have big differences, such as being a symlink to a directory on
+one side of the transfer, and a real directory on the other side.
+<p>For instance, if a command-line arg or a files-from entry told rsync to
+transfer the file "path/foo/file", the directories "path" and "path/foo"
+are implied when <strong>--relative</strong> is used.  If "path/foo" is a symlink to
+"bar" on the destination system, the receiving rsync would ordinarily
+delete "path/foo", recreate it as a directory, and receive the file into
+the new directory.  With <strong>--no-implied-dirs</strong>, the receiving rsync updates
+"path/foo/file" using the existing path elements, which means that the file
+ends up being created in "path/bar".  Another way to accomplish this link
+preservation is to use the <strong>--keep-dirlinks</strong> option (which will also
+affect symlinks to directories in the rest of the transfer).
+</p><p>In a similar but opposite scenario, if the transfer of "path/foo/file" is
+requested and "path/foo" is a symlink on the sending side, running without
+<strong>--no-implied-dirs</strong> would cause rsync to transform "path/foo" on the
+receiving side into an identical symlink, and then attempt to transfer
+"path/foo/file", which might fail if the duplicated symlink did not point
+to a directory on the receiving side.  Another way to avoid this sending of
+a symlink as an implied directory is to use <strong>--copy-unsafe-links</strong>, or
+<strong>--copy-dirlinks</strong> (both of which also affect symlinks in the rest of the
+transfer -- see their descriptions for full details).
+</p><p></p><p></p></dd><dt><strong><strong>-b, --backup</strong></strong></dt><dd> With this option, preexisting destination files are
+renamed as each file is transferred or deleted.  You can control where the
+backup file goes and what (if any) suffix gets appended using the
+<strong>--backup-dir</strong> and <strong>--suffix</strong> options.
+<p>Note that if you don't specify <strong>--backup-dir</strong>, (1) the
+<strong>--omit-dir-times</strong> option will be implied, and (2) if <strong>--delete</strong> is
+also in effect (without <strong>--delete-excluded</strong>), rsync will add a "protect"
+filter-rule for the backup suffix to the end of all your existing excludes
+(e.g. -f "P *~").  This will prevent previously backed-up files from being
+deleted.  Note that if you are supplying your own filter rules, you may
+need to manually insert your own exclude/protect rule somewhere higher up
+in the list so that it has a high enough priority to be effective (e.g., if
+your rules specify a trailing inclusion/exclusion of '*', the auto-added
+rule would never be reached).
+</p><p></p><p></p></dd><dt><strong><strong>--backup-dir=DIR</strong></strong></dt><dd> In combination with the <strong>--backup</strong> option, this
+tells rsync to store all backups in the specified directory. This is
+very useful for incremental backups.  You can additionally
+specify a backup suffix using the <strong>--suffix</strong> option
+(otherwise the files backed up in the specified directory
+will keep their original filenames).
+<p></p><p></p></dd><dt><strong><strong>--suffix=SUFFIX</strong></strong></dt><dd> This option allows you to override the default
+backup suffix used with the <strong>--backup</strong> (<strong>-b</strong>) option. The default suffix is a ~
+if no -<strong>-backup-dir</strong> was specified, otherwise it is an empty string.
+<p></p><p></p></dd><dt><strong><strong>-u, --update</strong></strong></dt><dd> This forces rsync to skip any files which exist on
+the destination and have a modified time that is newer than the source
+file.  (If an existing destination file has a modify time equal to the
+source file's, it will be updated if the sizes are different.)
+<p>In the current implementation of <strong>--update</strong>, a difference of file format
+between the sender and receiver is always
+considered to be important enough for an update, no matter what date
+is on the objects.  In other words, if the source has a directory or a
+symlink where the destination has a file, the transfer would occur
+regardless of the timestamps.  This might change in the future (feel
+free to comment on this on the mailing list if you have an opinion).
+</p><p></p><p></p></dd><dt><strong><strong>--inplace</strong></strong></dt><dd> This causes rsync not to create a new copy of the file
+and then move it into place.  Instead rsync will overwrite the existing
+file, meaning that the rsync algorithm can't accomplish the full amount of
+network reduction it might be able to otherwise (since it does not yet try
+to sort data matches).  One exception to this is if you combine the option
+with <strong>--backup</strong>, since rsync is smart enough to use the backup file as the
+basis file for the transfer.
+<p>This option is useful for transfer of large files with block-based changes
+or appended data, and also on systems that are disk bound, not network
+bound.
+</p><p>The option implies <strong>--partial</strong> (since an interrupted transfer does not delete
+the file), but conflicts with <strong>--partial-dir</strong> and <strong>--delay-updates</strong>.
+Prior to rsync 2.6.4 <strong>--inplace</strong> was also incompatible with <strong>--compare-dest</strong>
+and <strong>--link-dest</strong>.
+</p><p>WARNING: The file's data will be in an inconsistent state during the
+transfer (and possibly afterward if the transfer gets interrupted), so you
+should not use this option to update files that are in use.  Also note that
+rsync will be unable to update a file in-place that is not writable by the
+receiving user.
+</p><p></p><p></p></dd><dt><strong><strong>--append</strong></strong></dt><dd> This causes rsync to update a file by appending data onto
+the end of the file, which presumes that the data that already exists on
+the receiving side is identical with the start of the file on the sending
+side.  If that is not true, the file will fail the checksum test, and the
+resend will do a normal <strong>--inplace</strong> update to correct the mismatched data.
+Only files on the receiving side that are shorter than the corresponding
+file on the sending side (as well as new files) are sent.
+Implies <strong>--inplace</strong>, but does not conflict with <strong>--sparse</strong> (though the
+<strong>--sparse</strong> option will be auto-disabled if a resend of the already-existing
+data is required).
+<p></p><p></p></dd><dt><strong><strong>-d, --dirs</strong></strong></dt><dd> Tell the sending side to include any directories that
+are encountered.  Unlike <strong>--recursive</strong>, a directory's contents are not copied
+unless the directory name specified is "." or ends with a trailing slash
+(e.g. ".", "dir/.", "dir/", etc.).  Without this option or the
+<strong>--recursive</strong> option, rsync will skip all directories it encounters (and
+output a message to that effect for each one).  If you specify both
+<strong>--dirs</strong> and <strong>--recursive</strong>, <strong>--recursive</strong> takes precedence.
+<p></p><p></p></dd><dt><strong><strong>-l, --links</strong></strong></dt><dd> When symlinks are encountered, recreate the
+symlink on the destination.
+<p></p><p></p></dd><dt><strong><strong>-L, --copy-links</strong></strong></dt><dd> When symlinks are encountered, the item that
+they point to (the referent) is copied, rather than the symlink.  In older
+versions of rsync, this option also had the side-effect of telling the
+receiving side to follow symlinks, such as symlinks to directories.  In a
+modern rsync such as this one, you'll need to specify <strong>--keep-dirlinks</strong> (<strong>-K</strong>)
+to get this extra behavior.  The only exception is when sending files to
+an rsync that is too old to understand <strong>-K</strong> -- in that case, the <strong>-L</strong> option
+will still have the side-effect of <strong>-K</strong> on that older receiving rsync.
+<p></p><p></p></dd><dt><strong><strong>--copy-unsafe-links</strong></strong></dt><dd> This tells rsync to copy the referent of
+symbolic links that point outside the copied tree.  Absolute symlinks
+are also treated like ordinary files, and so are any symlinks in the
+source path itself when <strong>--relative</strong> is used.  This option has no
+additional effect if <strong>--copy-links</strong> was also specified.
+<p></p><p></p></dd><dt><strong><strong>--safe-links</strong></strong></dt><dd> This tells rsync to ignore any symbolic links
+which point outside the copied tree. All absolute symlinks are
+also ignored. Using this option in conjunction with <strong>--relative</strong> may
+give unexpected results.
+<p></p><p></p></dd><dt><strong><strong>-K, --copy-dirlinks</strong></strong></dt><dd> This option causes the sending side to treat
+a symlink to a directory as though it were a real directory.  This is
+useful if you don't want symlinks to non-directories to be affected, as
+they would be using <strong>--copy-links</strong>.
+<p>Without this option, if the sending side has replaced a directory with a
+symlink to a directory, the receiving side will delete anything that is in
+the way of the new symlink, including a directory hierarchy (as long as
+<strong>--force</strong> or <strong>--delete</strong> is in effect).
+</p><p>See also <strong>--keep-dirlinks</strong> for an analogous option for the receiving
+side.
+</p><p></p><p></p></dd><dt><strong><strong>-K, --keep-dirlinks</strong></strong></dt><dd> This option causes the receiving side to treat
+a symlink to a directory as though it were a real directory, but only if it
+matches a real directory from the sender.  Without this option, the
+receiver's symlink would be deleted and replaced with a real directory.
+<p>For example, suppose you transfer a directory "foo" that contains a file
+"file", but "foo" is a symlink to directory "bar" on the receiver.  Without
+<strong>--keep-dirlinks</strong>, the receiver deletes symlink "foo", recreates it as a
+directory, and receives the file into the new directory.  With
+<strong>--keep-dirlinks</strong>, the receiver keeps the symlink and "file" ends up in
+"bar".
+</p><p>See also <strong>--copy-dirlinks</strong> for an analogous option for the sending side.
+</p><p></p><p></p></dd><dt><strong><strong>-H, --hard-links</strong></strong></dt><dd> This tells rsync to look for hard-linked files in
+the transfer and link together the corresponding files on the receiving
+side.  Without this option, hard-linked files in the transfer are treated
+as though they were separate files.
+<p>Note that rsync can only detect hard links if both parts of the link
+are in the list of files being sent.
+</p><p></p><p></p></dd><dt><strong><strong>-p, --perms</strong></strong></dt><dd> This option causes the receiving rsync to set the
+destination permissions to be the same as the source permissions.  (See
+also the <strong>--chmod</strong> option for a way to modify what rsync considers to
+be the source permissions.)
+<p>When this option is <em>off</em>, permissions are set as follows:
+</p><p></p><blockquote><ul>
+  <li> Existing files (including updated files) retain their existing
+  permissions, though the <strong>--executability</strong> option might change just
+  the execute permission for the file.
+  </li><li> New files get their "normal" permission bits set to the source
+  file's permissions masked with the receiving end's umask setting, and
+  their special permission bits disabled except in the case where a new
+  directory inherits a setgid bit from its parent directory.
+</li></ul></blockquote>
+<p>Thus, when <strong>--perms</strong> and <strong>--executability</strong> are both disabled,
+rsync's behavior is the same as that of other file-copy utilities,
+such as <strong>cp</strong>(1) and <strong>tar</strong>(1).
+</p><p>In summary: to give destination files (both old and new) the source
+permissions, use <strong>--perms</strong>.  To give new files the destination-default
+permissions (while leaving existing files unchanged), make sure that the
+<strong>--perms</strong> option is off and use <strong>--chmod=ugo=rwX</strong> (which ensures that
+all non-masked bits get enabled).  If you'd care to make this latter
+behavior easier to type, you could define a popt alias for it, such as
+putting this line in the file ~/.popt (this defines the <strong>-s</strong> option,
+and includes --no-g to use the default group of the destination dir):
+</p><p></p><blockquote><code>   rsync alias -s --no-p --no-g --chmod=ugo=rwX</code></blockquote>
+<p>You could then use this new option in a command such as this one:
+</p><p></p><blockquote><code>   rsync -asv src/ dest/</code></blockquote>
+<p>(Caveat: make sure that <strong>-a</strong> does not follow <strong>-s</strong>, or it will re-enable
+the "--no-*" options.)
+</p><p>The preservation of the destination's setgid bit on newly-created
+directories when <strong>--perms</strong> is off was added in rsync 2.6.7.  Older rsync
+versions erroneously preserved the three special permission bits for
+newly-created files when <strong>--perms</strong> was off, while overriding the
+destination's setgid bit setting on a newly-created directory.  (Keep in
+mind that it is the version of the receiving rsync that affects this
+behavior.)
+</p><p></p><p></p></dd><dt><strong><strong>-E, --executability</strong></strong></dt><dd> This option causes rsync to preserve the
+executability (or non-executability) of regular files when <strong>--perms</strong> is
+not enabled.  A regular file is considered to be executable if at least one
+'x' is turned on in its permissions.  When an existing destination file's
+executability differs from that of the corresponding source file, rsync
+modifies the destination file's permissions as follows:
+<p></p><blockquote><ul>
+  <li> To make a file non-executable, rsync turns off all its 'x'
+  permissions.
+  </li><li> To make a file executable, rsync turns on each 'x' permission that
+  has a corresponding 'r' permission enabled.
+</li></ul></blockquote>
+<p>If <strong>--perms</strong> is enabled, this option is ignored.
+</p><p></p><p></p></dd><dt><strong><strong>--chmod</strong></strong></dt><dd> This option tells rsync to apply one or more
+comma-separated "chmod" strings to the permission of the files in the
+transfer.  The resulting value is treated as though it was the permissions
+that the sending side supplied for the file, which means that this option
+can seem to have no effect on existing files if <strong>--perms</strong> is not enabled.
+<p>In addition to the normal parsing rules specified in the <strong>chmod</strong>(1)
+manpage, you can specify an item that should only apply to a directory by
+prefixing it with a 'D', or specify an item that should only apply to a
+file by prefixing it with a 'F'.  For example:
+</p><p></p><blockquote>--chmod=Dg+s,ug+w,Fo-w,+X</blockquote>
+<p>It is also legal to specify multiple <strong>--chmod</strong> options, as each
+additional option is just appended to the list of changes to make.
+</p><p>See the <strong>--perms</strong> and <strong>--executability</strong> options for how the resulting
+permission value can be applied to the files in the transfer.
+</p><p></p><p></p></dd><dt><strong><strong>-o, --owner</strong></strong></dt><dd> This option causes rsync to set the owner of the
+destination file to be the same as the source file.  By default, the
+preservation is done by name, but may fall back to using the ID number
+in some circumstances (see the <strong>--numeric-ids</strong> option for a full
+discussion).
+This option has no effect if the receiving rsync is not run as the
+super-user and <strong>--super</strong> is not specified.
+<p></p><p></p></dd><dt><strong><strong>-g, --group</strong></strong></dt><dd> This option causes rsync to set the group of the
+destination file to be the same as the source file.  If the receiving
+program is not running as the super-user (or with the <strong>--no-super</strong>
+option), only groups that the
+receiver is a member of will be preserved.  By default, the preservation
+is done by name, but may fall back to using the ID number in some
+circumstances.  See the <strong>--numeric-ids</strong> option for a full discussion.
+<p></p><p></p></dd><dt><strong><strong>--devices</strong></strong></dt><dd> This option causes rsync to transfer character and
+block device files to the remote system to recreate these devices.
+This option has no effect if the receiving rsync is not run as the
+super-user and <strong>--super</strong> is not specified.
+<p></p><p></p></dd><dt><strong><strong>--specials</strong></strong></dt><dd> This option causes rsync to transfer special files
+such as named sockets and fifos.
+<p></p><p></p></dd><dt><strong><strong>-D</strong></strong></dt><dd> The <strong>-D</strong> option is equivalent to <strong>--devices</strong> <strong>--specials</strong>.
+<p></p><p></p></dd><dt><strong><strong>-t, --times</strong></strong></dt><dd> This tells rsync to transfer modification times along
+with the files and update them on the remote system.  Note that if this
+option is not used, the optimization that excludes files that have not been
+modified cannot be effective; in other words, a missing <strong>-t</strong> or <strong>-a</strong> will
+cause the next transfer to behave as if it used <strong>-I</strong>, causing all files to be
+updated (though the rsync algorithm will make the update fairly efficient
+if the files haven't actually changed, you're much better off using <strong>-t</strong>).
+<p></p><p></p></dd><dt><strong><strong>-O, --omit-dir-times</strong></strong></dt><dd> This tells rsync to omit directories when
+it is preserving modification times (see <strong>--times</strong>).  If NFS is sharing
+the directories on the receiving side, it is a good idea to use <strong>-O</strong>.
+This option is inferred if you use <strong>--backup</strong> without <strong>--backup-dir</strong>.
+<p></p><p></p></dd><dt><strong><strong>--super</strong></strong></dt><dd> This tells the receiving side to attempt super-user
+activities even if the receiving rsync wasn't run by the super-user.  These
+activities include: preserving users via the <strong>--owner</strong> option, preserving
+all groups (not just the current user's groups) via the <strong>--groups</strong>
+option, and copying devices via the <strong>--devices</strong> option.  This is useful
+for systems that allow such activities without being the super-user, and
+also for ensuring that you will get errors if the receiving side isn't
+being running as the super-user.  To turn off super-user activities, the
+super-user can use <strong>--no-super</strong>.
+<p></p><p></p></dd><dt><strong><strong>-S, --sparse</strong></strong></dt><dd> Try to handle sparse files efficiently so they take
+up less space on the destination.  Conflicts with <strong>--inplace</strong> because it's
+not possible to overwrite data in a sparse fashion.
+<p>NOTE: Don't use this option when the destination is a Solaris "tmpfs"
+filesystem. It doesn't seem to handle seeks over null regions
+correctly and ends up corrupting the files.
+</p><p></p><p></p></dd><dt><strong><strong>-n, --dry-run</strong></strong></dt><dd> This tells rsync to not do any file transfers,
+instead it will just report the actions it would have taken.
+<p></p><p></p></dd><dt><strong><strong>-W, --whole-file</strong></strong></dt><dd> With this option the incremental rsync algorithm
+is not used and the whole file is sent as-is instead.  The transfer may be
+faster if this option is used when the bandwidth between the source and
+destination machines is higher than the bandwidth to disk (especially when the
+"disk" is actually a networked filesystem).  This is the default when both
+the source and destination are specified as local paths.
+<p></p><p></p></dd><dt><strong><strong>-x, --one-file-system</strong></strong></dt><dd> This tells rsync to avoid crossing a
+filesystem boundary when recursing.  This does not limit the user's ability
+to specify items to copy from multiple filesystems, just rsync's recursion
+through the hierarchy of each directory that the user specified, and also
+the analogous recursion on the receiving side during deletion.  Also keep
+in mind that rsync treats a "bind" mount to the same device as being on the
+same filesystem.
+<p>If this option is repeated, rsync omits all mount-point directories from
+the copy.  Otherwise, it includes an empty directory at each mount-point it
+encounters (using the attributes of the mounted directory because those of
+the underlying mount-point directory are inaccessible).
+</p><p>If rsync has been told to collapse symlinks (via <strong>--copy-links</strong> or
+<strong>--copy-unsafe-links</strong>), a symlink to a directory on another device is
+treated like a mount-point.  Symlinks to non-directories are unaffected
+by this option.
+</p><p></p><p></p></dd><dt><strong><strong>--existing, --ignore-non-existing</strong></strong></dt><dd> This tells rsync to skip
+updating files that do not exist yet on the destination.  If this option is
+combined with the <strong>--ignore-existing</strong> option, no files will be updated
+(which can be useful if all you want to do is to delete missing files).
+<p></p><p></p></dd><dt><strong><strong>--ignore-existing</strong></strong></dt><dd> This tells rsync to skip updating files that
+already exist on the destination.  See also <strong>--ignore-non-existing</strong>.
+<p></p><p></p></dd><dt><strong><strong>--remove-sent-files</strong></strong></dt><dd> This tells rsync to remove from the sending
+side the files and/or symlinks that are newly created or whose content is
+updated on the receiving side.  Directories and devices are not removed,
+nor are files/symlinks whose attributes are merely changed.
+<p></p><p></p></dd><dt><strong><strong>--delete</strong></strong></dt><dd> This tells rsync to delete extraneous files from the
+receiving side (ones that aren't on the sending side), but only for the
+directories that are being synchronized.  You must have asked rsync to
+send the whole directory (e.g. "dir" or "dir/") without using a wildcard
+for the directory's contents (e.g. "dir/*") since the wildcard is expanded
+by the shell and rsync thus gets a request to transfer individual files, not
+the files' parent directory.  Files that are excluded from transfer are
+also excluded from being deleted unless you use the <strong>--delete-excluded</strong>
+option or mark the rules as only matching on the sending side (see the
+include/exclude modifiers in the FILTER RULES section).
+<p>Prior to rsync 2.6.7, this option would have no effect unless <strong>--recursive</strong>
+was in effect.  Beginning with 2.6.7, deletions will also occur when <strong>--dirs</strong>
+(<strong>-d</strong>) is in effect, but only for directories whose contents are being copied.
+</p><p>This option can be dangerous if used incorrectly!  It is a very good idea
+to run first using the <strong>--dry-run</strong> option (<strong>-n</strong>) to see what files would be
+deleted to make sure important files aren't listed.
+</p><p>If the sending side detects any I/O errors, then the deletion of any
+files at the destination will be automatically disabled. This is to
+prevent temporary filesystem failures (such as NFS errors) on the
+sending side causing a massive deletion of files on the
+destination.  You can override this with the <strong>--ignore-errors</strong> option.
+</p><p>The <strong>--delete</strong> option may be combined with one of the --delete-WHEN options
+without conflict, as well as <strong>--delete-excluded</strong>.  However, if none of the
+--delete-WHEN options are specified, rsync will currently choose the
+<strong>--delete-before</strong> algorithm.  A future version may change this to choose the
+<strong>--delete-during</strong> algorithm.  See also <strong>--delete-after</strong>.
+</p><p></p><p></p></dd><dt><strong><strong>--delete-before</strong></strong></dt><dd> Request that the file-deletions on the receiving
+side be done before the transfer starts.  This is the default if <strong>--delete</strong>
+or <strong>--delete-excluded</strong> is specified without one of the --delete-WHEN options.
+See <strong>--delete</strong> (which is implied) for more details on file-deletion.
+<p>Deleting before the transfer is helpful if the filesystem is tight for space
+and removing extraneous files would help to make the transfer possible.
+However, it does introduce a delay before the start of the transfer,
+and this delay might cause the transfer to timeout (if <strong>--timeout</strong> was
+specified).
+</p><p></p><p></p></dd><dt><strong><strong>--delete-during, --del</strong></strong></dt><dd> Request that the file-deletions on the
+receiving side be done incrementally as the transfer happens.  This is
+a faster method than choosing the before- or after-transfer algorithm,
+but it is only supported beginning with rsync version 2.6.4.
+See <strong>--delete</strong> (which is implied) for more details on file-deletion.
+<p></p><p></p></dd><dt><strong><strong>--delete-after</strong></strong></dt><dd> Request that the file-deletions on the receiving
+side be done after the transfer has completed.  This is useful if you
+are sending new per-directory merge files as a part of the transfer and
+you want their exclusions to take effect for the delete phase of the
+current transfer.
+See <strong>--delete</strong> (which is implied) for more details on file-deletion.
+<p></p><p></p></dd><dt><strong><strong>--delete-excluded</strong></strong></dt><dd> In addition to deleting the files on the
+receiving side that are not on the sending side, this tells rsync to also
+delete any files on the receiving side that are excluded (see <strong>--exclude</strong>).
+See the FILTER RULES section for a way to make individual exclusions behave
+this way on the receiver, and for a way to protect files from
+<strong>--delete-excluded</strong>.
+See <strong>--delete</strong> (which is implied) for more details on file-deletion.
+<p></p><p></p></dd><dt><strong><strong>--ignore-errors</strong></strong></dt><dd> Tells <strong>--delete</strong> to go ahead and delete files
+even when there are I/O errors.
+<p></p><p></p></dd><dt><strong><strong>--force</strong></strong></dt><dd> This option tells rsync to delete a non-empty directory
+when it is to be replaced by a non-directory.  This is only relevant if
+deletions are not active (see <strong>--delete</strong> for details).
+<p>Note for older rsync versions: <strong>--force</strong> used to still be required when
+using <strong>--delete-after</strong>, and it used to be non-functional unless the
+<strong>--recursive</strong> option was also enabled.
+</p><p></p><p></p></dd><dt><strong><strong>--max-delete=NUM</strong></strong></dt><dd> This tells rsync not to delete more than NUM
+files or directories (NUM must be non-zero).
+This is useful when mirroring very large trees to prevent disasters.
+<p></p><p></p></dd><dt><strong><strong>--max-size=SIZE</strong></strong></dt><dd> This tells rsync to avoid transferring any
+file that is larger than the specified SIZE. The SIZE value can be
+suffixed with a string to indicate a size multiplier, and
+may be a fractional value (e.g. "<strong>--max-size=1.5m</strong>").
+<p>The suffixes are as follows: "K" (or "KiB") is a kibibyte (1024),
+"M" (or "MiB") is a mebibyte (1024*1024), and "G" (or "GiB") is a
+gibibyte (1024*1024*1024).
+If you want the multiplier to be 1000 instead of 1024, use "KB",
+"MB", or "GB".  (Note: lower-case is also accepted for all values.)
+Finally, if the suffix ends in either "+1" or "-1", the value will
+be offset by one byte in the indicated direction.
+</p><p>Examples: --max-size=1.5mb-1 is 1499999 bytes, and --max-size=2g+1 is
+2147483649 bytes.
+</p><p></p><p></p></dd><dt><strong><strong>--min-size=SIZE</strong></strong></dt><dd> This tells rsync to avoid transferring any
+file that is smaller than the specified SIZE, which can help in not
+transferring small, junk files.
+See the <strong>--max-size</strong> option for a description of SIZE.
+<p></p><p></p></dd><dt><strong><strong>-B, --block-size=BLOCKSIZE</strong></strong></dt><dd> This forces the block size used in
+the rsync algorithm to a fixed value.  It is normally selected based on
+the size of each file being updated.  See the technical report for details.
+<p></p><p></p></dd><dt><strong><strong>-e, --rsh=COMMAND</strong></strong></dt><dd> This option allows you to choose an alternative
+remote shell program to use for communication between the local and
+remote copies of rsync. Typically, rsync is configured to use ssh by
+default, but you may prefer to use rsh on a local network.
+<p>If this option is used with <strong>[user@]host::module/path</strong>, then the
+remote shell <em>COMMAND</em> will be used to run an rsync daemon on the
+remote host, and all data will be transmitted through that remote
+shell connection, rather than through a direct socket connection to a
+running rsync daemon on the remote host.  See the section "USING
+RSYNC-DAEMON FEATURES VIA A REMOTE-SHELL CONNECTION" above.
+</p><p>Command-line arguments are permitted in COMMAND provided that COMMAND is
+presented to rsync as a single argument.  You must use spaces (not tabs
+or other whitespace) to separate the command and args from each other,
+and you can use single- and/or double-quotes to preserve spaces in an
+argument (but not backslashes).  Note that doubling a single-quote
+inside a single-quoted string gives you a single-quote; likewise for
+double-quotes (though you need to pay attention to which quotes your
+shell is parsing and which quotes rsync is parsing).  Some examples:
+</p><p></p><blockquote>
+<code>    -e 'ssh -p 2234'</code><br>
+<code>    -e 'ssh -o "ProxyCommand nohup ssh firewall nc -w1 %h %p"'</code><br>
+</blockquote>
+<p>(Note that ssh users can alternately customize site-specific connect
+options in their .ssh/config file.)
+</p><p>You can also choose the remote shell program using the RSYNC_RSH
+environment variable, which accepts the same range of values as <strong>-e</strong>.
+</p><p>See also the <strong>--blocking-io</strong> option which is affected by this option.
+</p><p></p><p></p></dd><dt><strong><strong>--rsync-path=PROGRAM</strong></strong></dt><dd> Use this to specify what program is to be run
+on the remote machine to start-up rsync.  Often used when rsync is not in
+the default remote-shell's path (e.g. --rsync-path=/usr/local/bin/rsync).
+Note that PROGRAM is run with the help of a shell, so it can be any
+program, script, or command sequence you'd care to run, so long as it does
+not corrupt the standard-in &amp; standard-out that rsync is using to
+communicate.
+<p>One tricky example is to set a different default directory on the remote
+machine for use with the <strong>--relative</strong> option.  For instance:
+</p><p></p><blockquote><code>    rsync -avR --rsync-path="cd /a/b &amp;&amp; rsync" hst:c/d /e/</code></blockquote>
+<p></p><p></p></dd><dt><strong><strong>-C, --cvs-exclude</strong></strong></dt><dd> This is a useful shorthand for excluding a
+broad range of files that you often don't want to transfer between
+systems. It uses the same algorithm that CVS uses to determine if
+a file should be ignored.
+<p>The exclude list is initialized to:
+</p><p></p><blockquote><blockquote><code>RCS SCCS CVS CVS.adm RCSLOG cvslog.* tags TAGS .make.state
+.nse_depinfo *~ #* .#* ,* _$* *$ *.old *.bak *.BAK *.orig *.rej
+.del-* *.a *.olb *.o *.obj *.so *.exe *.Z *.elc *.ln core .svn/</code></blockquote></blockquote>
+<p>then files listed in a $HOME/.cvsignore are added to the list and any
+files listed in the CVSIGNORE environment variable (all cvsignore names
+are delimited by whitespace).
+</p><p>Finally, any file is ignored if it is in the same directory as a
+.cvsignore file and matches one of the patterns listed therein.  Unlike
+rsync's filter/exclude files, these patterns are split on whitespace.
+See the <strong>cvs(1)</strong> manual for more information.
+</p><p>If you're combining <strong>-C</strong> with your own <strong>--filter</strong> rules, you should
+note that these CVS excludes are appended at the end of your own rules,
+regardless of where the <strong>-C</strong> was placed on the command-line.  This makes them
+a lower priority than any rules you specified explicitly.  If you want to
+control where these CVS excludes get inserted into your filter rules, you
+should omit the <strong>-C</strong> as a command-line option and use a combination of
+<strong>--filter=:C</strong> and <strong>--filter=-C</strong> (either on your command-line or by
+putting the ":C" and "-C" rules into a filter file with your other rules).
+The first option turns on the per-directory scanning for the .cvsignore
+file.  The second option does a one-time import of the CVS excludes
+mentioned above.
+</p><p></p><p></p></dd><dt><strong><strong>-f, --filter=RULE</strong></strong></dt><dd> This option allows you to add rules to selectively
+exclude certain files from the list of files to be transferred. This is
+most useful in combination with a recursive transfer.
+<p>You may use as many <strong>--filter</strong> options on the command line as you like
+to build up the list of files to exclude.
+</p><p>See the FILTER RULES section for detailed information on this option.
+</p><p></p><p></p></dd><dt><strong><strong>-F</strong></strong></dt><dd> The <strong>-F</strong> option is a shorthand for adding two <strong>--filter</strong> rules to
+your command.  The first time it is used is a shorthand for this rule:
+<p></p><blockquote><code>   --filter='dir-merge /.rsync-filter'</code></blockquote>
+<p>This tells rsync to look for per-directory .rsync-filter files that have
+been sprinkled through the hierarchy and use their rules to filter the
+files in the transfer.  If <strong>-F</strong> is repeated, it is a shorthand for this
+rule:
+</p><p></p><blockquote><code>   --filter='exclude .rsync-filter'</code></blockquote>
+<p>This filters out the .rsync-filter files themselves from the transfer.
+</p><p>See the FILTER RULES section for detailed information on how these options
+work.
+</p><p></p><p></p></dd><dt><strong><strong>--exclude=PATTERN</strong></strong></dt><dd> This option is a simplified form of the
+<strong>--filter</strong> option that defaults to an exclude rule and does not allow
+the full rule-parsing syntax of normal filter rules.
+<p>See the FILTER RULES section for detailed information on this option.
+</p><p></p><p></p></dd><dt><strong><strong>--exclude-from=FILE</strong></strong></dt><dd> This option is related to the <strong>--exclude</strong>
+option, but it specifies a FILE that contains exclude patterns (one per line).
+Blank lines in the file and lines starting with ';' or '#' are ignored.
+If <em>FILE</em> is <strong>-</strong>, the list will be read from standard input.
+<p></p><p></p></dd><dt><strong><strong>--include=PATTERN</strong></strong></dt><dd> This option is a simplified form of the
+<strong>--filter</strong> option that defaults to an include rule and does not allow
+the full rule-parsing syntax of normal filter rules.
+<p>See the FILTER RULES section for detailed information on this option.
+</p><p></p><p></p></dd><dt><strong><strong>--include-from=FILE</strong></strong></dt><dd> This option is related to the <strong>--include</strong>
+option, but it specifies a FILE that contains include patterns (one per line).
+Blank lines in the file and lines starting with ';' or '#' are ignored.
+If <em>FILE</em> is <strong>-</strong>, the list will be read from standard input.
+<p></p><p></p></dd><dt><strong><strong>--files-from=FILE</strong></strong></dt><dd> Using this option allows you to specify the
+exact list of files to transfer (as read from the specified FILE or <strong>-</strong>
+for standard input).  It also tweaks the default behavior of rsync to make
+transferring just the specified files and directories easier:
+<p></p><blockquote><ul>
+  <li> The <strong>--relative</strong> (<strong>-R</strong>) option is implied, which preserves the path
+  information that is specified for each item in the file (use
+  <strong>--no-relative</strong> or <strong>--no-R</strong> if you want to turn that off).
+  </li><li> The <strong>--dirs</strong> (<strong>-d</strong>) option is implied, which will create directories
+  specified in the list on the destination rather than noisily skipping
+  them (use <strong>--no-dirs</strong> or <strong>--no-d</strong> if you want to turn that off).
+  </li><li> The <strong>--archive</strong> (<strong>-a</strong>) option's behavior does not imply <strong>--recursive</strong>
+  (<strong>-r</strong>), so specify it explicitly, if you want it.
+  </li><li> These side-effects change the default state of rsync, so the position
+  of the <strong>--files-from</strong> option on the command-line has no bearing on how
+  other options are parsed (e.g. <strong>-a</strong> works the same before or after
+  <strong>--files-from</strong>, as does <strong>--no-R</strong> and all other options).
+</li></ul></blockquote>
+<p>The file names that are read from the FILE are all relative to the
+source dir -- any leading slashes are removed and no ".." references are
+allowed to go higher than the source dir.  For example, take this
+command:
+</p><p></p><blockquote><code>   rsync -a --files-from=/tmp/foo /usr remote:/backup</code></blockquote>
+<p>If /tmp/foo contains the string "bin" (or even "/bin"), the /usr/bin
+directory will be created as /backup/bin on the remote host.  If it
+contains "bin/" (note the trailing slash), the immediate contents of
+the directory would also be sent (without needing to be explicitly
+mentioned in the file -- this began in version 2.6.4).  In both cases,
+if the <strong>-r</strong> option was enabled, that dir's entire hierarchy would
+also be transferred (keep in mind that <strong>-r</strong> needs to be specified
+explicitly with <strong>--files-from</strong>, since it is not implied by <strong>-a</strong>).
+Also note
+that the effect of the (enabled by default) <strong>--relative</strong> option is to
+duplicate only the path info that is read from the file -- it does not
+force the duplication of the source-spec path (/usr in this case).
+</p><p>In addition, the <strong>--files-from</strong> file can be read from the remote host
+instead of the local host if you specify a "host:" in front of the file
+(the host must match one end of the transfer).  As a short-cut, you can
+specify just a prefix of ":" to mean "use the remote end of the
+transfer".  For example:
+</p><p></p><blockquote><code>   rsync -a --files-from=:/path/file-list src:/ /tmp/copy</code></blockquote>
+<p>This would copy all the files specified in the /path/file-list file that
+was located on the remote "src" host.
+</p><p></p><p></p></dd><dt><strong><strong>-0, --from0</strong></strong></dt><dd> This tells rsync that the rules/filenames it reads from a
+file are terminated by a null ('\0') character, not a NL, CR, or CR+LF.
+This affects <strong>--exclude-from</strong>, <strong>--include-from</strong>, <strong>--files-from</strong>, and any
+merged files specified in a <strong>--filter</strong> rule.
+It does not affect <strong>--cvs-exclude</strong> (since all names read from a .cvsignore
+file are split on whitespace).
+<p></p><p></p></dd><dt><strong><strong>-T, --temp-dir=DIR</strong></strong></dt><dd> This option instructs rsync to use DIR as a
+scratch directory when creating temporary copies of the files transferred
+on the receiving side.  The default behavior is to create each temporary
+file in the same directory as the associated destination file.
+<p>This option is most often used when the receiving disk partition does not
+have enough free space to hold a copy of the largest file in the transfer.
+In this case (i.e. when the scratch directory in on a different disk
+partition), rsync will not be able to rename each received temporary file
+over the top of the associated destination file, but instead must copy it
+into place.  Rsync does this by copying the file over the top of the
+destination file, which means that the destination file will contain
+truncated data during this copy.  If this were not done this way (even if
+the destination file were first removed, the data locally copied to a
+temporary file in the destination directory, and then renamed into place)
+it would be possible for the old file to continue taking up disk space (if
+someone had it open), and thus there might not be enough room to fit the
+new version on the disk at the same time.
+</p><p>If you are using this option for reasons other than a shortage of disk
+space, you may wish to combine it with the <strong>--delay-updates</strong> option,
+which will ensure that all copied files get put into subdirectories in the
+destination hierarchy, awaiting the end of the transfer.  If you don't
+have enough room to duplicate all the arriving files on the destination
+partition, another way to tell rsync that you aren't overly concerned
+about disk space is to use the <strong>--partial-dir</strong> option with a relative
+path; because this tells rsync that it is OK to stash off a copy of a
+single file in a subdir in the destination hierarchy, rsync will use the
+partial-dir as a staging area to bring over the copied file, and then
+rename it into place from there. (Specifying a <strong>--partial-dir</strong> with
+an absolute path does not have this side-effect.)
+</p><p></p><p></p></dd><dt><strong><strong>-y, --fuzzy</strong></strong></dt><dd> This option tells rsync that it should look for a
+basis file for any destination file that is missing.  The current algorithm
+looks in the same directory as the destination file for either a file that
+has an identical size and modified-time, or a similarly-named file.  If
+found, rsync uses the fuzzy basis file to try to speed up the transfer.
+<p>Note that the use of the <strong>--delete</strong> option might get rid of any potential
+fuzzy-match files, so either use <strong>--delete-after</strong> or specify some
+filename exclusions if you need to prevent this.
+</p><p></p><p></p></dd><dt><strong><strong>--compare-dest=DIR</strong></strong></dt><dd> This option instructs rsync to use <em>DIR</em> on
+the destination machine as an additional hierarchy to compare destination
+files against doing transfers (if the files are missing in the destination
+directory).  If a file is found in <em>DIR</em> that is identical to the
+sender's file, the file will NOT be transferred to the destination
+directory.  This is useful for creating a sparse backup of just files that
+have changed from an earlier backup.
+<p>Beginning in version 2.6.4, multiple <strong>--compare-dest</strong> directories may be
+provided, which will cause rsync to search the list in the order specified
+for an exact match.
+If a match is found that differs only in attributes, a local copy is made
+and the attributes updated.
+If a match is not found, a basis file from one of the <em>DIR</em>s will be
+selected to try to speed up the transfer.
+</p><p>If <em>DIR</em> is a relative path, it is relative to the destination directory.
+See also <strong>--copy-dest</strong> and <strong>--link-dest</strong>.
+</p><p></p><p></p></dd><dt><strong><strong>--copy-dest=DIR</strong></strong></dt><dd> This option behaves like <strong>--compare-dest</strong>, but
+rsync will also copy unchanged files found in <em>DIR</em> to the destination
+directory using a local copy.
+This is useful for doing transfers to a new destination while leaving
+existing files intact, and then doing a flash-cutover when all files have
+been successfully transferred.
+<p>Multiple <strong>--copy-dest</strong> directories may be provided, which will cause
+rsync to search the list in the order specified for an unchanged file.
+If a match is not found, a basis file from one of the <em>DIR</em>s will be
+selected to try to speed up the transfer.
+</p><p>If <em>DIR</em> is a relative path, it is relative to the destination directory.
+See also <strong>--compare-dest</strong> and <strong>--link-dest</strong>.
+</p><p></p><p></p></dd><dt><strong><strong>--link-dest=DIR</strong></strong></dt><dd> This option behaves like <strong>--copy-dest</strong>, but
+unchanged files are hard linked from <em>DIR</em> to the destination directory.
+The files must be identical in all preserved attributes (e.g. permissions,
+possibly ownership) in order for the files to be linked together.
+An example:
+<p></p><blockquote><code>  rsync -av --link-dest=$PWD/prior_dir host:src_dir/ new_dir/</code></blockquote>
+<p>Beginning in version 2.6.4, multiple <strong>--link-dest</strong> directories may be
+provided, which will cause rsync to search the list in the order specified
+for an exact match.
+If a match is found that differs only in attributes, a local copy is made
+and the attributes updated.
+If a match is not found, a basis file from one of the <em>DIR</em>s will be
+selected to try to speed up the transfer.
+</p><p>If <em>DIR</em> is a relative path, it is relative to the destination directory.
+See also <strong>--compare-dest</strong> and <strong>--copy-dest</strong>.
+</p><p>Note that rsync versions prior to 2.6.1 had a bug that could prevent
+<strong>--link-dest</strong> from working properly for a non-super-user when <strong>-o</strong> was
+specified (or implied by <strong>-a</strong>).  You can work-around this bug by avoiding
+the <strong>-o</strong> option when sending to an old rsync.
+</p><p></p><p></p></dd><dt><strong><strong>-z, --compress</strong></strong></dt><dd> With this option, rsync compresses the file data
+as it is sent to the destination machine, which reduces the amount of data
+being transmitted -- something that is useful over a slow connection.
+<p>Note that this option typically achieves better compression ratios than can
+be achieved by using a compressing remote shell or a compressing transport
+because it takes advantage of the implicit information in the matching data
+blocks that are not explicitly sent over the connection.
+</p><p></p><p></p></dd><dt><strong><strong>--compress-level=NUM</strong></strong></dt><dd> Explicitly set the compression level to use
+(see <strong>--compress</strong>) instead of letting it default.  If NUM is non-zero,
+the <strong>--compress</strong> option is implied.
+<p></p><p></p></dd><dt><strong><strong>--numeric-ids</strong></strong></dt><dd> With this option rsync will transfer numeric group
+and user IDs rather than using user and group names and mapping them
+at both ends.
+<p>By default rsync will use the username and groupname to determine
+what ownership to give files. The special uid 0 and the special group
+0 are never mapped via user/group names even if the <strong>--numeric-ids</strong>
+option is not specified.
+</p><p>If a user or group has no name on the source system or it has no match
+on the destination system, then the numeric ID
+from the source system is used instead.  See also the comments on the
+"use chroot" setting in the rsyncd.conf manpage for information on how
+the chroot setting affects rsync's ability to look up the names of the
+users and groups and what you can do about it.
+</p><p></p><p></p></dd><dt><strong><strong>--timeout=TIMEOUT</strong></strong></dt><dd> This option allows you to set a maximum I/O
+timeout in seconds. If no data is transferred for the specified time
+then rsync will exit. The default is 0, which means no timeout.
+<p></p><p></p></dd><dt><strong><strong>--address</strong></strong></dt><dd> By default rsync will bind to the wildcard address when
+connecting to an rsync daemon.  The <strong>--address</strong> option allows you to
+specify a specific IP address (or hostname) to bind to.  See also this
+option in the <strong>--daemon</strong> mode section.
+<p></p><p></p></dd><dt><strong><strong>--port=PORT</strong></strong></dt><dd> This specifies an alternate TCP port number to use
+rather than the default of 873.  This is only needed if you are using the
+double-colon (::) syntax to connect with an rsync daemon (since the URL
+syntax has a way to specify the port as a part of the URL).  See also this
+option in the <strong>--daemon</strong> mode section.
+<p></p><p></p></dd><dt><strong><strong>--sockopts</strong></strong></dt><dd> This option can provide endless fun for people
+who like to tune their systems to the utmost degree. You can set all
+sorts of socket options which may make transfers faster (or
+slower!). Read the man page for the setsockopt() system call for
+details on some of the options you may be able to set. By default no
+special socket options are set. This only affects direct socket
+connections to a remote rsync daemon.  This option also exists in the
+<strong>--daemon</strong> mode section.
+<p></p><p></p></dd><dt><strong><strong>--blocking-io</strong></strong></dt><dd> This tells rsync to use blocking I/O when launching
+a remote shell transport.  If the remote shell is either rsh or remsh,
+rsync defaults to using
+blocking I/O, otherwise it defaults to using non-blocking I/O.  (Note that
+ssh prefers non-blocking I/O.)
+<p></p><p></p></dd><dt><strong><strong>-i, --itemize-changes</strong></strong></dt><dd> Requests a simple itemized list of the
+changes that are being made to each file, including attribute changes.
+This is exactly the same as specifying <strong>--log-format='%i %n%L'</strong>.
+If you repeat the option, unchanged files will also be output, but only
+if the receiving rsync is at least version 2.6.7 (you can use <strong>-vv</strong>
+with older versions of rsync, but that also turns on the output of other
+verbose messages).
+<p>The "%i" escape has a cryptic output that is 9 letters long.  The general
+format is like the string <strong>YXcstpogz</strong>, where <strong>Y</strong> is replaced by the
+type of update being done, <strong>X</strong> is replaced by the file-type, and the
+other letters represent attributes that may be output if they are being
+modified.
+</p><p>The update types that replace the <strong>Y</strong> are as follows:
+</p><p></p><blockquote><ul>
+  <li> A <strong>&lt;</strong> means that a file is being transferred to the remote host
+  (sent).
+  </li><li> A <strong>&gt;</strong> means that a file is being transferred to the local host
+  (received).
+  </li><li> A <strong>c</strong> means that a local change/creation is occurring for the item
+  (such as the creation of a directory or the changing of a symlink, etc.).
+  </li><li> A <strong>h</strong> means that the item is a hard link to another item (requires
+  <strong>--hard-links</strong>).
+  </li><li> A <strong>.</strong> means that the item is not being updated (though it might
+  have attributes that are being modified).
+</li></ul></blockquote>
+<p>The file-types that replace the <strong>X</strong> are: <strong>f</strong> for a file, a <strong>d</strong> for a
+directory, an <strong>L</strong> for a symlink, a <strong>D</strong> for a device, and a <strong>S</strong> for a
+special file (e.g. named sockets and fifos).
+</p><p>The other letters in the string above are the actual letters that
+will be output if the associated attribute for the item is being updated or
+a "." for no change.  Three exceptions to this are: (1) a newly created
+item replaces each letter with a "+", (2) an identical item replaces the
+dots with spaces, and (3) an unknown attribute replaces each letter with
+a "?" (this can happen when talking to an older rsync).
+</p><p>The attribute that is associated with each letter is as follows:
+</p><p></p><blockquote><ul>
+  <li> A <strong>c</strong> means the checksum of the file is different and will be
+  updated by the file transfer (requires <strong>--checksum</strong>).
+  </li><li> A <strong>s</strong> means the size of the file is different and will be updated
+  by the file transfer.
+  </li><li> A <strong>t</strong> means the modification time is different and is being updated
+  to the sender's value (requires <strong>--times</strong>).  An alternate value of <strong>T</strong>
+  means that the time will be set to the transfer time, which happens
+  anytime a symlink is transferred, or when a file or device is transferred
+  without <strong>--times</strong>.
+  </li><li> A <strong>p</strong> means the permissions are different and are being updated to
+  the sender's value (requires <strong>--perms</strong>).
+  </li><li> An <strong>o</strong> means the owner is different and is being updated to the
+  sender's value (requires <strong>--owner</strong> and super-user privileges).
+  </li><li> A <strong>g</strong> means the group is different and is being updated to the
+  sender's value (requires <strong>--group</strong> and the authority to set the group).
+  </li><li> The <strong>z</strong> slot is reserved for future use.
+</li></ul></blockquote>
+<p>One other output is possible:  when deleting files, the "%i" will output
+the string "*deleting" for each item that is being removed (assuming that
+you are talking to a recent enough rsync that it logs deletions instead of
+outputting them as a verbose message).
+</p><p></p><p></p></dd><dt><strong><strong>--log-format=FORMAT</strong></strong></dt><dd> This allows you to specify exactly what the
+rsync client outputs to the user on a per-file basis.  The format is a text
+string containing embedded single-character escape sequences prefixed with
+a percent (%) character.  For a list of the possible escape characters, see
+the "log format" setting in the rsyncd.conf manpage.  (Note that this
+option does not affect what a daemon logs to its logfile.)
+<p>Specifying this option will mention each file, dir, etc. that gets updated
+in a significant way (a transferred file, a recreated symlink/device, or a
+touched directory) unless the itemize-changes escape (%i) is included in
+the string, in which case the logging of names increases to mention any
+item that is changed in any way (as long as the receiving side is at least
+2.6.4).  See the <strong>--itemize-changes</strong> option for a description of the
+output of "%i".
+</p><p>The <strong>--verbose</strong> option implies a format of "%n%L", but you can use
+<strong>--log-format</strong> without <strong>--verbose</strong> if you like, or you can override
+the format of its per-file output using this option.
+</p><p>Rsync will output the log-format string prior to a file's transfer unless
+one of the transfer-statistic escapes is requested, in which case the
+logging is done at the end of the file's transfer.  When this late logging
+is in effect and <strong>--progress</strong> is also specified, rsync will also output
+the name of the file being transferred prior to its progress information
+(followed, of course, by the log-format output).
+</p><p></p><p></p></dd><dt><strong><strong>--stats</strong></strong></dt><dd> This tells rsync to print a verbose set of statistics
+on the file transfer, allowing you to tell how effective the rsync
+algorithm is for your data.
+<p>The current statistics are as follows: </p><ul>
+  <li> <strong>Number of files</strong> is the count of all "files" (in the generic
+  sense), which includes directories, symlinks, etc.
+  </li><li> <strong>Number of files transferred</strong> is the count of normal files that
+  were updated via the rsync algorithm, which does not include created
+  dirs, symlinks, etc.
+  </li><li> <strong>Total file size</strong> is the total sum of all file sizes in the transfer.
+  This does not count any size for directories or special files, but does
+  include the size of symlinks.
+  </li><li> <strong>Total transferred file size</strong> is the total sum of all files sizes
+  for just the transferred files.
+  </li><li> <strong>Literal data</strong> is how much unmatched file-update data we had to
+  send to the receiver for it to recreate the updated files.
+  </li><li> <strong>Matched data</strong> is how much data the receiver got locally when
+  recreating the updated files.
+  </li><li> <strong>File list size</strong> is how big the file-list data was when the sender
+  sent it to the receiver.  This is smaller than the in-memory size for the
+  file list due to some compressing of duplicated data when rsync sends the
+  list.
+  </li><li> <strong>File list generation time</strong> is the number of seconds that the
+  sender spent creating the file list.  This requires a modern rsync on the
+  sending side for this to be present.
+  </li><li> <strong>File list transfer time</strong> is the number of seconds that the sender
+  spent sending the file list to the receiver.
+  </li><li> <strong>Total bytes sent</strong> is the count of all the bytes that rsync sent
+  from the client side to the server side.
+  </li><li> <strong>Total bytes received</strong> is the count of all non-message bytes that
+  rsync received by the client side from the server side.  "Non-message"
+  bytes means that we don't count the bytes for a verbose message that the
+  server sent to us, which makes the stats more consistent.
+</li></ul>
+<p></p><p></p></dd><dt><strong><strong>-8, --8-bit-output</strong></strong></dt><dd> This tells rsync to leave all high-bit characters
+unescaped in the output instead of trying to test them to see if they're
+valid in the current locale and escaping the invalid ones.  All control
+characters (but never tabs) are always escaped, regardless of this option's
+setting.
+<p>The escape idiom that started in 2.6.7 is to output a literal backslash (\)
+and a hash (#), followed by exactly 3 octal digits.  For example, a newline
+would output as "\#012".  A literal backslash that is in a filename is not
+escaped unless it is followed by a hash and 3 digits (0-9).
+</p><p></p><p></p></dd><dt><strong><strong>-h, --human-readable</strong></strong></dt><dd> Output numbers in a more human-readable format.
+This makes big numbers output using larger units, with a K, M, or G suffix.  If
+this option was specified once, these units are K (1000), M (1000*1000), and
+G (1000*1000*1000); if the option is repeated, the units are powers of 1024
+instead of 1000.
+<p></p><p></p></dd><dt><strong><strong>--partial</strong></strong></dt><dd> By default, rsync will delete any partially
+transferred file if the transfer is interrupted. In some circumstances
+it is more desirable to keep partially transferred files. Using the
+<strong>--partial</strong> option tells rsync to keep the partial file which should
+make a subsequent transfer of the rest of the file much faster.
+<p></p><p></p></dd><dt><strong><strong>--partial-dir=DIR</strong></strong></dt><dd> A better way to keep partial files than the
+<strong>--partial</strong> option is to specify a <em>DIR</em> that will be used to hold the
+partial data (instead of writing it out to the destination file).
+On the next transfer, rsync will use a file found in this
+dir as data to speed up the resumption of the transfer and then delete it
+after it has served its purpose.
+<p>Note that if <strong>--whole-file</strong> is specified (or implied), any partial-dir
+file that is found for a file that is being updated will simply be removed
+(since
+rsync is sending files without using the incremental rsync algorithm).
+</p><p>Rsync will create the <em>DIR</em> if it is missing (just the last dir -- not
+the whole path).  This makes it easy to use a relative path (such as
+"<strong>--partial-dir=.rsync-partial</strong>") to have rsync create the
+partial-directory in the destination file's directory when needed, and then
+remove it again when the partial file is deleted.
+</p><p>If the partial-dir value is not an absolute path, rsync will add an exclude
+rule at the end of all your existing excludes.  This will prevent the
+sending of any partial-dir files that may exist on the sending side, and
+will also prevent the untimely deletion of partial-dir items on the
+receiving side.  An example: the above <strong>--partial-dir</strong> option would add
+the equivalent of "<strong>--exclude=.rsync-partial/</strong>" at the end of any other
+filter rules.
+</p><p>If you are supplying your own exclude rules, you may need to add your own
+exclude/hide/protect rule for the partial-dir because (1) the auto-added
+rule may be ineffective at the end of your other rules, or (2) you may wish
+to override rsync's exclude choice.  For instance, if you want to make
+rsync clean-up any left-over partial-dirs that may be lying around, you
+should specify <strong>--delete-after</strong> and add a "risk" filter rule, e.g.
+<strong>-f 'R .rsync-partial/'</strong>.  (Avoid using <strong>--delete-before</strong> or
+<strong>--delete-during</strong> unless you don't need rsync to use any of the
+left-over partial-dir data during the current run.)
+</p><p>IMPORTANT: the <strong>--partial-dir</strong> should not be writable by other users or it
+is a security risk.  E.g. AVOID "/tmp".
+</p><p>You can also set the partial-dir value the RSYNC_PARTIAL_DIR environment
+variable.  Setting this in the environment does not force <strong>--partial</strong> to be
+enabled, but rather it affects where partial files go when <strong>--partial</strong> is
+specified.  For instance, instead of using <strong>--partial-dir=.rsync-tmp</strong>
+along with <strong>--progress</strong>, you could set RSYNC_PARTIAL_DIR=.rsync-tmp in your
+environment and then just use the <strong>-P</strong> option to turn on the use of the
+.rsync-tmp dir for partial transfers.  The only times that the <strong>--partial</strong>
+option does not look for this environment value are (1) when <strong>--inplace</strong> was
+specified (since <strong>--inplace</strong> conflicts with <strong>--partial-dir</strong>), and (2) when
+<strong>--delay-updates</strong> was specified (see below).
+</p><p>For the purposes of the daemon-config's "refuse options" setting,
+<strong>--partial-dir</strong> does <em>not</em> imply <strong>--partial</strong>.  This is so that a
+refusal of the <strong>--partial</strong> option can be used to disallow the overwriting
+of destination files with a partial transfer, while still allowing the
+safer idiom provided by <strong>--partial-dir</strong>.
+</p><p></p><p></p></dd><dt><strong><strong>--delay-updates</strong></strong></dt><dd> This option puts the temporary file from each
+updated file into a holding directory until the end of the
+transfer, at which time all the files are renamed into place in rapid
+succession.  This attempts to make the updating of the files a little more
+atomic.  By default the files are placed into a directory named ".~tmp~" in
+each file's destination directory, but if you've specified the
+<strong>--partial-dir</strong> option, that directory will be used instead.  See the
+comments in the <strong>--partial-dir</strong> section for a discussion of how this
+".~tmp~" dir will be excluded from the transfer, and what you can do if
+you wnat rsync to cleanup old ".~tmp~" dirs that might be lying around.
+Conflicts with <strong>--inplace</strong> and <strong>--append</strong>.
+<p>This option uses more memory on the receiving side (one bit per file
+transferred) and also requires enough free disk space on the receiving
+side to hold an additional copy of all the updated files.  Note also that
+you should not use an absolute path to <strong>--partial-dir</strong> unless (1)
+there is no
+chance of any of the files in the transfer having the same name (since all
+the updated files will be put into a single directory if the path is
+absolute)
+and (2) there are no mount points in the hierarchy (since the
+delayed updates will fail if they can't be renamed into place).
+</p><p>See also the "atomic-rsync" perl script in the "support" subdir for an
+update algorithm that is even more atomic (it uses <strong>--link-dest</strong> and a
+parallel hierarchy of files).
+</p><p></p><p></p></dd><dt><strong><strong>-m, --prune-empty-dirs</strong></strong></dt><dd> This option tells the receiving rsync to get
+rid of empty directories from the file-list, including nested directories
+that have no non-directory children.  This is useful for avoiding the
+creation of a bunch of useless directories when the sending rsync is
+recursively scanning a hierarchy of files using include/exclude/filter
+rules.
+<p>Because the file-list is actually being pruned, this option also affects
+what directories get deleted when a delete is active.  However, keep in
+mind that excluded files and directories can prevent existing items from
+being deleted (because an exclude hides source files and protects
+destination files).
+</p><p>You can prevent the pruning of certain empty directories from the file-list
+by using a global "protect" filter.  For instance, this option would ensure
+that the directory "emptydir" was kept in the file-list:
+</p><p></p><blockquote>    --filter 'protect emptydir/'</blockquote>
+<p>Here's an example that copies all .pdf files in a hierarchy, only creating
+the necessary destination directories to hold the .pdf files, and ensures
+that any superfluous files and directories in the destination are removed
+(note the hide filter of non-directories being used instead of an exclude):
+</p><p></p><blockquote>     rsync -avm --del --include='*.pdf' -f 'hide,! */' src/ dest</blockquote>
+<p>If you didn't want to remove superfluous destination files, the more
+time-honored options of "--include='*/' --exclude='*'" would work fine
+in place of the hide-filter (if that is more natural to you).
+</p><p></p><p></p></dd><dt><strong><strong>--progress</strong></strong></dt><dd> This option tells rsync to print information
+showing the progress of the transfer. This gives a bored user
+something to watch.
+Implies <strong>--verbose</strong> if it wasn't already specified.
+<p>When the file is transferring, the data looks like this:
+</p><p></p><pre>      782448  63%  110.64kB/s    0:00:04
+</pre>
+
+<p>This tells you the current file size, the percentage of the transfer that
+is complete, the current calculated file-completion rate (including both
+data over the wire and data being matched locally), and the estimated time
+remaining in this transfer.
+</p><p>After a file is complete, the data looks like this:
+</p><p></p><pre>     1238099 100%  146.38kB/s    0:00:08  (5, 57.1% of 396)
+</pre>
+
+<p>This tells you the final file size, that it's 100% complete, the final
+transfer rate for the file, the amount of elapsed time it took to transfer
+the file, and the addition of a total-transfer summary in parentheses.
+These additional numbers tell you how many files have been updated, and
+what percent of the total number of files has been scanned.
+</p><p></p><p></p></dd><dt><strong><strong>-P</strong></strong></dt><dd> The <strong>-P</strong> option is equivalent to <strong>--partial</strong> <strong>--progress</strong>.  Its
+purpose is to make it much easier to specify these two options for a long
+transfer that may be interrupted.
+<p></p><p></p></dd><dt><strong><strong>--password-file</strong></strong></dt><dd> This option allows you to provide a password
+in a file for accessing a remote rsync daemon. Note that this option
+is only useful when accessing an rsync daemon using the built in
+transport, not when using a remote shell as the transport. The file
+must not be world readable. It should contain just the password as a
+single line.
+<p></p><p></p></dd><dt><strong><strong>--list-only</strong></strong></dt><dd> This option will cause the source files to be listed
+instead of transferred.  This option is inferred if there is a single source
+arg and no destination specified, so its main uses are: (1) to turn a copy
+command that includes a
+destination arg into a file-listing command, (2) to be able to specify more
+than one local source arg (note: be sure to include the destination), or
+(3) to avoid the automatically added "<strong>-r --exclude='/*/*'</strong>" options that
+rsync usually uses as a compatibility kluge when generating a non-recursive
+listing.  Caution: keep in mind that a source arg with a wild-card is expanded
+by the shell into multiple args, so it is never safe to try to list such an arg
+without using this option.  For example:
+<p></p><pre>    rsync -av --list-only foo* dest/
+</pre>
+
+<p></p><p></p></dd><dt><strong><strong>--bwlimit=KBPS</strong></strong></dt><dd> This option allows you to specify a maximum
+transfer rate in kilobytes per second. This option is most effective when
+using rsync with large files (several megabytes and up). Due to the nature
+of rsync transfers, blocks of data are sent, then if rsync determines the
+transfer was too fast, it will wait before sending the next data block. The
+result is an average transfer rate equaling the specified limit. A value
+of zero specifies no limit.
+<p></p><p></p></dd><dt><strong><strong>--write-batch=FILE</strong></strong></dt><dd> Record a file that can later be applied to
+another identical destination with <strong>--read-batch</strong>. See the "BATCH MODE"
+section for details, and also the <strong>--only-write-batch</strong> option.
+<p></p><p></p></dd><dt><strong><strong>--only-write-batch=FILE</strong></strong></dt><dd> Works like <strong>--write-batch</strong>, except that
+no updates are made on the destination system when creating the batch.
+This lets you transport the changes to the destination system via some
+other means and then apply the changes via <strong>--read-batch</strong>.
+<p>Note that you can feel free to write the batch directly to some portable
+media: if this media fills to capacity before the end of the transfer, you
+can just apply that partial transfer to the destination and repeat the
+whole process to get the rest of the changes (as long as you don't mind a
+partially updated destination system while the multi-update cycle is
+happening).
+</p><p>Also note that you only save bandwidth when pushing changes to a remote
+system because this allows the batched data to be diverted from the sender
+into the batch file without having to flow over the wire to the receiver
+(when pulling, the sender is remote, and thus can't write the batch).
+</p><p></p><p></p></dd><dt><strong><strong>--read-batch=FILE</strong></strong></dt><dd> Apply all of the changes stored in FILE, a
+file previously generated by <strong>--write-batch</strong>.
+If <em>FILE</em> is <strong>-</strong>, the batch data will be read from standard input.
+See the "BATCH MODE" section for details.
+<p></p><p></p></dd><dt><strong><strong>--protocol=NUM</strong></strong></dt><dd> Force an older protocol version to be used.  This
+is useful for creating a batch file that is compatible with an older
+version of rsync.  For instance, if rsync 2.6.4 is being used with the
+<strong>--write-batch</strong> option, but rsync 2.6.3 is what will be used to run the
+<strong>--read-batch</strong> option, you should use "--protocol=28" when creating the
+batch file to force the older protocol version to be used in the batch
+file (assuming you can't upgrade the rsync on the reading system).
+<p></p><p></p></dd><dt><strong><strong>-4, --ipv4</strong> or <strong>-6, --ipv6</strong></strong></dt><dd> Tells rsync to prefer IPv4/IPv6
+when creating sockets.  This only affects sockets that rsync has direct
+control over, such as the outgoing socket when directly contacting an
+rsync daemon.  See also these options in the <strong>--daemon</strong> mode section.
+<p></p><p></p></dd><dt><strong><strong>--checksum-seed=NUM</strong></strong></dt><dd> Set the MD4 checksum seed to the integer
+NUM.  This 4 byte checksum seed is included in each block and file
+MD4 checksum calculation.  By default the checksum seed is generated
+by the server and defaults to the current time().  This option
+is used to set a specific checksum seed, which is useful for
+applications that want repeatable block and file checksums, or
+in the case where the user wants a more random checksum seed.
+Note that setting NUM to 0 causes rsync to use the default of time()
+for checksum seed.
+</dd></dl>
+<p></p><h2>DAEMON OPTIONS</h2>
+    
+<p>The options allowed when starting an rsync daemon are as follows:
+</p><p></p><dl>
+<p></p><dt><strong><strong>--daemon</strong></strong></dt><dd> This tells rsync that it is to run as a daemon.  The
+daemon you start running may be accessed using an rsync client using
+the <strong>host::module</strong> or <strong>rsync://host/module/</strong> syntax.
+<p>If standard input is a socket then rsync will assume that it is being
+run via inetd, otherwise it will detach from the current terminal and
+become a background daemon.  The daemon will read the config file
+(rsyncd.conf) on each connect made by a client and respond to
+requests accordingly.  See the rsyncd.conf(5) man page for more
+details.
+</p><p></p><p></p></dd><dt><strong><strong>--address</strong></strong></dt><dd> By default rsync will bind to the wildcard address when
+run as a daemon with the <strong>--daemon</strong> option.  The <strong>--address</strong> option
+allows you to specify a specific IP address (or hostname) to bind to.  This
+makes virtual hosting possible in conjunction with the <strong>--config</strong> option.
+See also the "address" global option in the rsyncd.conf manpage.
+<p></p><p></p></dd><dt><strong><strong>--bwlimit=KBPS</strong></strong></dt><dd> This option allows you to specify a maximum
+transfer rate in kilobytes per second for the data the daemon sends.
+The client can still specify a smaller <strong>--bwlimit</strong> value, but their
+requested value will be rounded down if they try to exceed it.  See the
+client version of this option (above) for some extra details.
+<p></p><p></p></dd><dt><strong><strong>--config=FILE</strong></strong></dt><dd> This specifies an alternate config file than
+the default.  This is only relevant when <strong>--daemon</strong> is specified.
+The default is /etc/rsyncd.conf unless the daemon is running over
+a remote shell program and the remote user is not the super-user; in that case
+the default is rsyncd.conf in the current directory (typically $HOME).
+<p></p><p></p></dd><dt><strong><strong>--no-detach</strong></strong></dt><dd> When running as a daemon, this option instructs
+rsync to not detach itself and become a background process.  This
+option is required when running as a service on Cygwin, and may also
+be useful when rsync is supervised by a program such as
+<strong>daemontools</strong> or AIX's <strong>System Resource Controller</strong>.
+<strong>--no-detach</strong> is also recommended when rsync is run under a
+debugger.  This option has no effect if rsync is run from inetd or
+sshd.
+<p></p><p></p></dd><dt><strong><strong>--port=PORT</strong></strong></dt><dd> This specifies an alternate TCP port number for the
+daemon to listen on rather than the default of 873.  See also the "port"
+global option in the rsyncd.conf manpage.
+<p></p><p></p></dd><dt><strong><strong>--sockopts</strong></strong></dt><dd> This overrides the <strong>socket options</strong> setting in the
+rsyncd.conf file and has the same syntax.
+<p></p><p></p></dd><dt><strong><strong>-v, --verbose</strong></strong></dt><dd> This option increases the amount of information the
+daemon logs during its startup phase.  After the client connects, the
+daemon's verbosity level will be controlled by the options that the client
+used and the "max verbosity" setting in the module's config section.
+<p></p><p></p></dd><dt><strong><strong>-4, --ipv4</strong> or <strong>-6, --ipv6</strong></strong></dt><dd> Tells rsync to prefer IPv4/IPv6
+when creating the incoming sockets that the rsync daemon will use to
+listen for connections.  One of these options may be required in older
+versions of Linux to work around an IPv6 bug in the kernel (if you see
+an "address already in use" error when nothing else is using the port,
+try specifying <strong>--ipv6</strong> or <strong>--ipv4</strong> when starting the daemon).
+<p></p><p></p></dd><dt><strong><strong>-h, --help</strong></strong></dt><dd> When specified after <strong>--daemon</strong>, print a short help
+page describing the options available for starting an rsync daemon.
+</dd></dl>
+<p></p><h2>FILTER RULES</h2>
+    
+<p>The filter rules allow for flexible selection of which files to transfer
+(include) and which files to skip (exclude).  The rules either directly
+specify include/exclude patterns or they specify a way to acquire more
+include/exclude patterns (e.g. to read them from a file).
+</p><p>As the list of files/directories to transfer is built, rsync checks each
+name to be transferred against the list of include/exclude patterns in
+turn, and the first matching pattern is acted on:  if it is an exclude
+pattern, then that file is skipped; if it is an include pattern then that
+filename is not skipped; if no matching pattern is found, then the
+filename is not skipped.
+</p><p>Rsync builds an ordered list of filter rules as specified on the
+command-line.  Filter rules have the following syntax:
+</p><p></p><blockquote>
+<code>RULE [PATTERN_OR_FILENAME]</code><br>
+<code>RULE,MODIFIERS [PATTERN_OR_FILENAME]</code><br>
+</blockquote>
+<p>You have your choice of using either short or long RULE names, as described
+below.  If you use a short-named rule, the ',' separating the RULE from the
+MODIFIERS is optional.  The PATTERN or FILENAME that follows (when present)
+must come after either a single space or an underscore (_).
+Here are the available rule prefixes:
+</p><p></p><blockquote>
+<strong>exclude, -</strong> specifies an exclude pattern. <br>
+<strong>include, +</strong> specifies an include pattern. <br>
+<strong>merge, .</strong> specifies a merge-file to read for more rules. <br>
+<strong>dir-merge, :</strong> specifies a per-directory merge-file. <br>
+<strong>hide, H</strong> specifies a pattern for hiding files from the transfer. <br>
+<strong>show, S</strong> files that match the pattern are not hidden. <br>
+<strong>protect, P</strong> specifies a pattern for protecting files from deletion. <br>
+<strong>risk, R</strong> files that match the pattern are not protected. <br>
+<strong>clear, !</strong> clears the current include/exclude list (takes no arg) <br>
+</blockquote>
+<p>When rules are being read from a file, empty lines are ignored, as are
+comment lines that start with a "#".
+</p><p>Note that the <strong>--include</strong>/<strong>--exclude</strong> command-line options do not allow the
+full range of rule parsing as described above -- they only allow the
+specification of include/exclude patterns plus a "!" token to clear the
+list (and the normal comment parsing when rules are read from a file).
+If a pattern
+does not begin with "- " (dash, space) or "+ " (plus, space), then the
+rule will be interpreted as if "+ " (for an include option) or "- " (for
+an exclude option) were prefixed to the string.  A <strong>--filter</strong> option, on
+the other hand, must always contain either a short or long rule name at the
+start of the rule.
+</p><p>Note also that the <strong>--filter</strong>, <strong>--include</strong>, and <strong>--exclude</strong> options take one
+rule/pattern each. To add multiple ones, you can repeat the options on
+the command-line, use the merge-file syntax of the <strong>--filter</strong> option, or
+the <strong>--include-from</strong>/<strong>--exclude-from</strong> options.
+</p><p></p><h2>INCLUDE/EXCLUDE PATTERN RULES</h2>
+    
+<p>You can include and exclude files by specifying patterns using the "+",
+"-", etc. filter rules (as introduced in the FILTER RULES section above).
+The include/exclude rules each specify a pattern that is matched against
+the names of the files that are going to be transferred.  These patterns
+can take several forms:
+</p><p></p><ul>
+  <li> if the pattern starts with a / then it is anchored to a
+  particular spot in the hierarchy of files, otherwise it is matched
+  against the end of the pathname.  This is similar to a leading ^ in
+  regular expressions.
+  Thus "/foo" would match a file named "foo" at either the "root of the
+  transfer" (for a global rule) or in the merge-file's directory (for a
+  per-directory rule).
+  An unqualified "foo" would match any file or directory named "foo"
+  anywhere in the tree because the algorithm is applied recursively from
+  the
+  top down; it behaves as if each path component gets a turn at being the
+  end of the file name.  Even the unanchored "sub/foo" would match at
+  any point in the hierarchy where a "foo" was found within a directory
+  named "sub".  See the section on ANCHORING INCLUDE/EXCLUDE PATTERNS for
+  a full discussion of how to specify a pattern that matches at the root
+  of the transfer.
+  </li><li> if the pattern ends with a / then it will only match a
+  directory, not a file, link, or device.
+  </li><li> rsync chooses between doing a simple string match and wildcard
+  matching by checking if the pattern contains one of these three wildcard
+  characters: '*', '?', and '[' .
+  </li><li> a '*' matches any non-empty path component (it stops at slashes).
+  </li><li> use '**' to match anything, including slashes.
+  </li><li> a '?' matches any character except a slash (/).
+  </li><li> a '[' introduces a character class, such as [a-z] or [[:alpha:]].
+  </li><li> in a wildcard pattern, a backslash can be used to escape a wildcard
+  character, but it is matched literally when no wildcards are present.
+  </li><li> if the pattern contains a / (not counting a trailing /) or a "**",
+  then it is matched against the full pathname, including any leading
+  directories. If the pattern doesn't contain a / or a "**", then it is
+  matched only against the final component of the filename.
+  (Remember that the algorithm is applied recursively so "full filename"
+  can actually be any portion of a path from the starting directory on
+  down.)
+  </li><li> a trailing "dir_name/***" will match both the directory (as if
+  "dir_name/" had been specified) and all the files in the directory
+  (as if "dir_name/**" had been specified).  (This behavior is new for
+  version 2.6.7.)
+</li></ul>
+<p>Note that, when using the <strong>--recursive</strong> (<strong>-r</strong>) option (which is implied by
+<strong>-a</strong>), every subcomponent of every path is visited from the top down, so
+include/exclude patterns get applied recursively to each subcomponent's
+full name (e.g. to include "/foo/bar/baz" the subcomponents "/foo" and
+"/foo/bar" must not be excluded).
+The exclude patterns actually short-circuit the directory traversal stage
+when rsync finds the files to send.  If a pattern excludes a particular
+parent directory, it can render a deeper include pattern ineffectual
+because rsync did not descend through that excluded section of the
+hierarchy.  This is particularly important when using a trailing '*' rule.
+For instance, this won't work:
+</p><p></p><blockquote>
+<code>+ /some/path/this-file-will-not-be-found</code><br>
+<code>+ /file-is-included</code><br>
+<code>- *</code><br>
+</blockquote>
+<p>This fails because the parent directory "some" is excluded by the '*'
+rule, so rsync never visits any of the files in the "some" or "some/path"
+directories.  One solution is to ask for all directories in the hierarchy
+to be included by using a single rule: "+ */" (put it somewhere before the
+"- *" rule), and perhaps use the <strong>--prune-empty-dirs</strong> option.  Another
+solution is to add specific include rules for all
+the parent dirs that need to be visited.  For instance, this set of rules
+works fine:
+</p><p></p><blockquote>
+<code>+ /some/</code><br>
+<code>+ /some/path/</code><br>
+<code>+ /some/path/this-file-is-found</code><br>
+<code>+ /file-also-included</code><br>
+<code>- *</code><br>
+</blockquote>
+<p>Here are some examples of exclude/include matching:
+</p><p></p><ul>
+  <li> "- *.o" would exclude all filenames matching *.o
+  </li><li> "- /foo" would exclude a file (or directory) named foo in the
+  transfer-root directory
+  </li><li> "- foo/" would exclude any directory named foo
+  </li><li> "- /foo/*/bar" would exclude any file named bar which is at two
+  levels below a directory named foo in the transfer-root directory
+  </li><li> "- /foo/**/bar" would exclude any file named bar two
+  or more levels below a directory named foo in the transfer-root directory
+  </li><li> The combination of "+ */", "+ *.c", and "- *" would include all
+  directories and C source files but nothing else (see also the
+  <strong>--prune-empty-dirs</strong> option)
+  </li><li> The combination of "+ foo/", "+ foo/bar.c", and "- *" would include
+  only the foo directory and foo/bar.c (the foo directory must be
+  explicitly included or it would be excluded by the "*")
+</li></ul>
+<p></p><h2>MERGE-FILE FILTER RULES</h2>
+    
+<p>You can merge whole files into your filter rules by specifying either a
+merge (.) or a dir-merge (:) filter rule (as introduced in the FILTER RULES
+section above).
+</p><p>There are two kinds of merged files -- single-instance ('.') and
+per-directory (':').  A single-instance merge file is read one time, and
+its rules are incorporated into the filter list in the place of the "."
+rule.  For per-directory merge files, rsync will scan every directory that
+it traverses for the named file, merging its contents when the file exists
+into the current list of inherited rules.  These per-directory rule files
+must be created on the sending side because it is the sending side that is
+being scanned for the available files to transfer.  These rule files may
+also need to be transferred to the receiving side if you want them to
+affect what files don't get deleted (see PER-DIRECTORY RULES AND DELETE
+below).
+</p><p>Some examples:
+</p><p></p><blockquote>
+<code>merge /etc/rsync/default.rules</code><br>
+<code>. /etc/rsync/default.rules</code><br>
+<code>dir-merge .per-dir-filter</code><br>
+<code>dir-merge,n- .non-inherited-per-dir-excludes</code><br>
+<code>:n- .non-inherited-per-dir-excludes</code><br>
+</blockquote>
+<p>The following modifiers are accepted after a merge or dir-merge rule:
+</p><p></p><ul>
+  <li> A <strong>-</strong> specifies that the file should consist of only exclude
+  patterns, with no other rule-parsing except for in-file comments.
+  </li><li> A <strong>+</strong> specifies that the file should consist of only include
+  patterns, with no other rule-parsing except for in-file comments.
+  </li><li> A <strong>C</strong> is a way to specify that the file should be read in a
+  CVS-compatible manner.  This turns on 'n', 'w', and '-', but also
+  allows the list-clearing token (!) to be specified.  If no filename is
+  provided, ".cvsignore" is assumed.
+  </li><li> A <strong>e</strong> will exclude the merge-file name from the transfer; e.g.
+  "dir-merge,e .rules" is like "dir-merge .rules" and "- .rules".
+  </li><li> An <strong>n</strong> specifies that the rules are not inherited by subdirectories.
+  </li><li> A <strong>w</strong> specifies that the rules are word-split on whitespace instead
+  of the normal line-splitting.  This also turns off comments.  Note: the
+  space that separates the prefix from the rule is treated specially, so
+  "- foo + bar" is parsed as two rules (assuming that prefix-parsing wasn't
+  also disabled).
+  </li><li> You may also specify any of the modifiers for the "+" or "-" rules
+  (below) in order to have the rules that are read in from the file
+  default to having that modifier set.  For instance, "merge,-/ .excl" would
+  treat the contents of .excl as absolute-path excludes,
+  while "dir-merge,s .filt" and ":sC" would each make all their
+  per-directory rules apply only on the sending side.
+</li></ul>
+<p>The following modifiers are accepted after a "+" or "-":
+</p><p></p><ul>
+  <li> A "/" specifies that the include/exclude rule should be matched
+  against the absolute pathname of the current item.  For example,
+  "-/ /etc/passwd" would exclude the passwd file any time the transfer
+  was sending files from the "/etc" directory, and "-/ subdir/foo"
+  would always exclude "foo" when it is in a dir named "subdir", even
+  if "foo" is at the root of the current transfer.
+  </li><li> A "!" specifies that the include/exclude should take effect if
+  the pattern fails to match.  For instance, "-! */" would exclude all
+  non-directories.
+  </li><li> A <strong>C</strong> is used to indicate that all the global CVS-exclude rules
+  should be inserted as excludes in place of the "-C".  No arg should
+  follow.
+  </li><li> An <strong>s</strong> is used to indicate that the rule applies to the sending
+  side.  When a rule affects the sending side, it prevents files from
+  being transferred.  The default is for a rule to affect both sides
+  unless <strong>--delete-excluded</strong> was specified, in which case default rules
+  become sender-side only.  See also the hide (H) and show (S) rules,
+  which are an alternate way to specify sending-side includes/excludes.
+  </li><li> An <strong>r</strong> is used to indicate that the rule applies to the receiving
+  side.  When a rule affects the receiving side, it prevents files from
+  being deleted.  See the <strong>s</strong> modifier for more info.  See also the
+  protect (P) and risk (R) rules, which are an alternate way to
+  specify receiver-side includes/excludes.
+</li></ul>
+<p>Per-directory rules are inherited in all subdirectories of the directory
+where the merge-file was found unless the 'n' modifier was used.  Each
+subdirectory's rules are prefixed to the inherited per-directory rules
+from its parents, which gives the newest rules a higher priority than the
+inherited rules.  The entire set of dir-merge rules are grouped together in
+the spot where the merge-file was specified, so it is possible to override
+dir-merge rules via a rule that got specified earlier in the list of global
+rules.  When the list-clearing rule ("!") is read from a per-directory
+file, it only clears the inherited rules for the current merge file.
+</p><p>Another way to prevent a single rule from a dir-merge file from being inherited is to
+anchor it with a leading slash.  Anchored rules in a per-directory
+merge-file are relative to the merge-file's directory, so a pattern "/foo"
+would only match the file "foo" in the directory where the dir-merge filter
+file was found.
+</p><p>Here's an example filter file which you'd specify via <strong>--filter=". file":</strong>
+</p><p></p><blockquote>
+<code>merge /home/user/.global-filter</code><br>
+<code>- *.gz</code><br>
+<code>dir-merge .rules</code><br>
+<code>+ *.[ch]</code><br>
+<code>- *.o</code><br>
+</blockquote>
+<p>This will merge the contents of the /home/user/.global-filter file at the
+start of the list and also turns the ".rules" filename into a per-directory
+filter file.  All rules read in prior to the start of the directory scan
+follow the global anchoring rules (i.e. a leading slash matches at the root
+of the transfer).
+</p><p>If a per-directory merge-file is specified with a path that is a parent
+directory of the first transfer directory, rsync will scan all the parent
+dirs from that starting point to the transfer directory for the indicated
+per-directory file.  For instance, here is a common filter (see <strong>-F</strong>):
+</p><p></p><blockquote><code>--filter=': /.rsync-filter'</code></blockquote>
+<p>That rule tells rsync to scan for the file .rsync-filter in all
+directories from the root down through the parent directory of the
+transfer prior to the start of the normal directory scan of the file in
+the directories that are sent as a part of the transfer.  (Note: for an
+rsync daemon, the root is always the same as the module's "path".)
+</p><p>Some examples of this pre-scanning for per-directory files:
+</p><p></p><blockquote>
+<code>rsync -avF /src/path/ /dest/dir</code><br>
+<code>rsync -av --filter=': ../../.rsync-filter' /src/path/ /dest/dir</code><br>
+<code>rsync -av --filter=': .rsync-filter' /src/path/ /dest/dir</code><br>
+</blockquote>
+<p>The first two commands above will look for ".rsync-filter" in "/" and
+"/src" before the normal scan begins looking for the file in "/src/path"
+and its subdirectories.  The last command avoids the parent-dir scan
+and only looks for the ".rsync-filter" files in each directory that is
+a part of the transfer.
+</p><p>If you want to include the contents of a ".cvsignore" in your patterns,
+you should use the rule ":C", which creates a dir-merge of the .cvsignore
+file, but parsed in a CVS-compatible manner.  You can
+use this to affect where the <strong>--cvs-exclude</strong> (<strong>-C</strong>) option's inclusion of the
+per-directory .cvsignore file gets placed into your rules by putting the
+":C" wherever you like in your filter rules.  Without this, rsync would
+add the dir-merge rule for the .cvsignore file at the end of all your other
+rules (giving it a lower priority than your command-line rules).  For
+example:
+</p><p></p><blockquote>
+<code>cat &lt;&lt;EOT | rsync -avC --filter='. -' a/ b</code><br>
+<code>+ foo.o</code><br>
+<code>:C</code><br>
+<code>- *.old</code><br>
+<code>EOT</code><br>
+<code>rsync -avC --include=foo.o -f :C --exclude='*.old' a/ b</code><br>
+</blockquote>
+<p>Both of the above rsync commands are identical.  Each one will merge all
+the per-directory .cvsignore rules in the middle of the list rather than
+at the end.  This allows their dir-specific rules to supersede the rules
+that follow the :C instead of being subservient to all your rules.  To
+affect the other CVS exclude rules (i.e. the default list of exclusions,
+the contents of $HOME/.cvsignore, and the value of $CVSIGNORE) you should
+omit the <strong>-C</strong> command-line option and instead insert a "-C" rule into
+your filter rules; e.g. "--filter=-C".
+</p><p></p><h2>LIST-CLEARING FILTER RULE</h2>
+    
+<p>You can clear the current include/exclude list by using the "!" filter
+rule (as introduced in the FILTER RULES section above).  The "current"
+list is either the global list of rules (if the rule is encountered while
+parsing the filter options) or a set of per-directory rules (which are
+inherited in their own sub-list, so a subdirectory can use this to clear
+out the parent's rules).
+</p><p></p><h2>ANCHORING INCLUDE/EXCLUDE PATTERNS</h2>
+    
+<p>As mentioned earlier, global include/exclude patterns are anchored at the
+"root of the transfer" (as opposed to per-directory patterns, which are
+anchored at the merge-file's directory).  If you think of the transfer as
+a subtree of names that are being sent from sender to receiver, the
+transfer-root is where the tree starts to be duplicated in the destination
+directory.  This root governs where patterns that start with a / match.
+</p><p>Because the matching is relative to the transfer-root, changing the
+trailing slash on a source path or changing your use of the <strong>--relative</strong>
+option affects the path you need to use in your matching (in addition to
+changing how much of the file tree is duplicated on the destination
+host).  The following examples demonstrate this.
+</p><p>Let's say that we want to match two source files, one with an absolute
+path of "/home/me/foo/bar", and one with a path of "/home/you/bar/baz".
+Here is how the various command choices differ for a 2-source transfer:
+</p><p></p><blockquote>
+   Example cmd: rsync -a /home/me /home/you /dest <br>
+   +/- pattern: /me/foo/bar <br>
+   +/- pattern: /you/bar/baz <br>
+   Target file: /dest/me/foo/bar <br>
+   Target file: /dest/you/bar/baz <br>
+</blockquote>
+<p></p><blockquote>
+   Example cmd: rsync -a /home/me/ /home/you/ /dest <br>
+   +/- pattern: /foo/bar               (note missing "me") <br>
+   +/- pattern: /bar/baz               (note missing "you") <br>
+   Target file: /dest/foo/bar <br>
+   Target file: /dest/bar/baz <br>
+</blockquote>
+<p></p><blockquote>
+   Example cmd: rsync -a --relative /home/me/ /home/you /dest <br>
+   +/- pattern: /home/me/foo/bar       (note full path) <br>
+   +/- pattern: /home/you/bar/baz      (ditto) <br>
+   Target file: /dest/home/me/foo/bar <br>
+   Target file: /dest/home/you/bar/baz <br>
+</blockquote>
+<p></p><blockquote>
+   Example cmd: cd /home; rsync -a --relative me/foo you/ /dest <br>
+   +/- pattern: /me/foo/bar      (starts at specified path) <br>
+   +/- pattern: /you/bar/baz     (ditto) <br>
+   Target file: /dest/me/foo/bar <br>
+   Target file: /dest/you/bar/baz <br>
+</blockquote>
+<p>The easiest way to see what name you should filter is to just
+look at the output when using <strong>--verbose</strong> and put a / in front of the name
+(use the <strong>--dry-run</strong> option if you're not yet ready to copy any files).
+</p><p></p><h2>PER-DIRECTORY RULES AND DELETE</h2>
+    
+<p>Without a delete option, per-directory rules are only relevant on the
+sending side, so you can feel free to exclude the merge files themselves
+without affecting the transfer.  To make this easy, the 'e' modifier adds
+this exclude for you, as seen in these two equivalent commands:
+</p><p></p><blockquote>
+<code>rsync -av --filter=': .excl' --exclude=.excl host:src/dir /dest</code><br>
+<code>rsync -av --filter=':e .excl' host:src/dir /dest</code><br>
+</blockquote>
+<p>However, if you want to do a delete on the receiving side AND you want some
+files to be excluded from being deleted, you'll need to be sure that the
+receiving side knows what files to exclude.  The easiest way is to include
+the per-directory merge files in the transfer and use <strong>--delete-after</strong>,
+because this ensures that the receiving side gets all the same exclude
+rules as the sending side before it tries to delete anything:
+</p><p></p><blockquote><code>rsync -avF --delete-after host:src/dir /dest</code></blockquote>
+<p>However, if the merge files are not a part of the transfer, you'll need to
+either specify some global exclude rules (i.e. specified on the command
+line), or you'll need to maintain your own per-directory merge files on
+the receiving side.  An example of the first is this (assume that the
+remote .rules files exclude themselves):
+</p><p></p><pre>rsync -av --filter=': .rules' --filter='. /my/extra.rules'
+   --delete host:src/dir /dest
+</pre>
+
+<p>In the above example the extra.rules file can affect both sides of the
+transfer, but (on the sending side) the rules are subservient to the rules
+merged from the .rules files because they were specified after the
+per-directory merge rule.
+</p><p>In one final example, the remote side is excluding the .rsync-filter
+files from the transfer, but we want to use our own .rsync-filter files
+to control what gets deleted on the receiving side.  To do this we must
+specifically exclude the per-directory merge files (so that they don't get
+deleted) and then put rules into the local files to control what else
+should not get deleted.  Like one of these commands:
+</p><p></p><pre>    rsync -av --filter=':e /.rsync-filter' --delete \ 
+        host:src/dir /dest
+    rsync -avFF --delete host:src/dir /dest
+</pre>
+
+<p></p><h2>BATCH MODE</h2>
+    
+<p>Batch mode can be used to apply the same set of updates to many
+identical systems. Suppose one has a tree which is replicated on a
+number of hosts.  Now suppose some changes have been made to this
+source tree and those changes need to be propagated to the other
+hosts. In order to do this using batch mode, rsync is run with the
+write-batch option to apply the changes made to the source tree to one
+of the destination trees.  The write-batch option causes the rsync
+client to store in a "batch file" all the information needed to repeat
+this operation against other, identical destination trees.
+</p><p>To apply the recorded changes to another destination tree, run rsync
+with the read-batch option, specifying the name of the same batch
+file, and the destination tree.  Rsync updates the destination tree
+using the information stored in the batch file.
+</p><p>For convenience, one additional file is creating when the write-batch
+option is used.  This file's name is created by appending
+".sh" to the batch filename.  The .sh file contains
+a command-line suitable for updating a destination tree using that
+batch file. It can be executed using a Bourne(-like) shell, optionally
+passing in an alternate destination tree pathname which is then used
+instead of the original path. This is useful when the destination tree
+path differs from the original destination tree path.
+</p><p>Generating the batch file once saves having to perform the file
+status, checksum, and data block generation more than once when
+updating multiple destination trees. Multicast transport protocols can
+be used to transfer the batch update files in parallel to many hosts
+at once, instead of sending the same data to every host individually.
+</p><p>Examples:
+</p><p></p><blockquote>
+<code>$ rsync --write-batch=foo -a host:/source/dir/ /adest/dir/</code><br>
+<code>$ scp foo* remote:</code><br>
+<code>$ ssh remote ./foo.sh /bdest/dir/</code><br>
+</blockquote>
+<p></p><blockquote>
+<code>$ rsync --write-batch=foo -a /source/dir/ /adest/dir/</code><br>
+<code>$ ssh remote rsync --read-batch=- -a /bdest/dir/ &lt;foo</code><br>
+</blockquote>
+<p>In these examples, rsync is used to update /adest/dir/ from /source/dir/
+and the information to repeat this operation is stored in "foo" and
+"foo.sh".  The host "remote" is then updated with the batched data going
+into the directory /bdest/dir.  The differences between the two examples
+reveals some of the flexibility you have in how you deal with batches:
+</p><p></p><ul>
+  <li> The first example shows that the initial copy doesn't have to be
+  local -- you can push or pull data to/from a remote host using either the
+  remote-shell syntax or rsync daemon syntax, as desired.
+  </li><li> The first example uses the created "foo.sh" file to get the right
+  rsync options when running the read-batch command on the remote host.
+  </li><li> The second example reads the batch data via standard input so that
+  the batch file doesn't need to be copied to the remote machine first.
+  This example avoids the foo.sh script because it needed to use a modified
+  <strong>--read-batch</strong> option, but you could edit the script file if you wished to
+  make use of it (just be sure that no other option is trying to use
+  standard input, such as the "<strong>--exclude-from=-</strong>" option).
+</li></ul>
+<p>Caveats:
+</p><p>The read-batch option expects the destination tree that it is updating
+to be identical to the destination tree that was used to create the
+batch update fileset.  When a difference between the destination trees
+is encountered the update might be discarded with a warning (if the file
+appears to be up-to-date already) or the file-update may be attempted
+and then, if the file fails to verify, the update discarded with an
+error.  This means that it should be safe to re-run a read-batch operation
+if the command got interrupted.  If you wish to force the batched-update to
+always be attempted regardless of the file's size and date, use the <strong>-I</strong>
+option (when reading the batch).
+If an error occurs, the destination tree will probably be in a
+partially updated state. In that case, rsync can
+be used in its regular (non-batch) mode of operation to fix up the
+destination tree.
+</p><p>The rsync version used on all destinations must be at least as new as the
+one used to generate the batch file.  Rsync will die with an error if the
+protocol version in the batch file is too new for the batch-reading rsync
+to handle.  See also the <strong>--protocol</strong> option for a way to have the
+creating rsync generate a batch file that an older rsync can understand.
+(Note that batch files changed format in version 2.6.3, so mixing versions
+older than that with newer versions will not work.)
+</p><p>When reading a batch file, rsync will force the value of certain options
+to match the data in the batch file if you didn't set them to the same
+as the batch-writing command.  Other options can (and should) be changed.
+For instance <strong>--write-batch</strong> changes to <strong>--read-batch</strong>,
+<strong>--files-from</strong> is dropped, and the
+<strong>--filter</strong>/<strong>--include</strong>/<strong>--exclude</strong> options are not needed unless
+one of the <strong>--delete</strong> options is specified.
+</p><p>The code that creates the BATCH.sh file transforms any filter/include/exclude
+options into a single list that is appended as a "here" document to the
+shell script file.  An advanced user can use this to modify the exclude
+list if a change in what gets deleted by <strong>--delete</strong> is desired.  A normal
+user can ignore this detail and just use the shell script as an easy way
+to run the appropriate <strong>--read-batch</strong> command for the batched data.
+</p><p>The original batch mode in rsync was based on "rsync+", but the latest
+version uses a new implementation.
+</p><p></p><h2>SYMBOLIC LINKS</h2>
+    
+<p>Three basic behaviors are possible when rsync encounters a symbolic
+link in the source directory.
+</p><p>By default, symbolic links are not transferred at all.  A message
+"skipping non-regular" file is emitted for any symlinks that exist.
+</p><p>If <strong>--links</strong> is specified, then symlinks are recreated with the same
+target on the destination.  Note that <strong>--archive</strong> implies
+<strong>--links</strong>.
+</p><p>If <strong>--copy-links</strong> is specified, then symlinks are "collapsed" by
+copying their referent, rather than the symlink.
+</p><p>rsync also distinguishes "safe" and "unsafe" symbolic links.  An
+example where this might be used is a web site mirror that wishes
+ensure the rsync module they copy does not include symbolic links to
+<strong>/etc/passwd</strong> in the public section of the site.  Using
+<strong>--copy-unsafe-links</strong> will cause any links to be copied as the file
+they point to on the destination.  Using <strong>--safe-links</strong> will cause
+unsafe links to be omitted altogether.  (Note that you must specify
+<strong>--links</strong> for <strong>--safe-links</strong> to have any effect.)
+</p><p>Symbolic links are considered unsafe if they are absolute symlinks
+(start with <strong>/</strong>), empty, or if they contain enough <strong>".."</strong>
+components to ascend from the directory being copied.
+</p><p>Here's a summary of how the symlink options are interpreted.  The list is
+in order of precedence, so if your combination of options isn't mentioned,
+use the first line that is a complete subset of your options:
+</p><p></p><p></p><dt><strong><strong>--copy-links</strong></strong></dt><dd> Turn all symlinks into normal files (leaving no
+symlinks for any other options to affect).
+<p></p><p></p></dd><dt><strong><strong>--links --copy-unsafe-links</strong></strong></dt><dd> Turn all unsafe symlinks into files
+and duplicate all safe symlinks.
+<p></p><p></p></dd><dt><strong><strong>--copy-unsafe-links</strong></strong></dt><dd> Turn all unsafe symlinks into files, noisily
+skip all safe symlinks.
+<p></p><p></p></dd><dt><strong><strong>--links --safe-links</strong></strong></dt><dd> Duplicate safe symlinks and skip unsafe
+ones.
+<p></p><p></p></dd><dt><strong><strong>--links</strong></strong></dt><dd> Duplicate all symlinks.
+<p></p><h2>DIAGNOSTICS</h2>
+    
+<p>rsync occasionally produces error messages that may seem a little
+cryptic. The one that seems to cause the most confusion is "protocol
+version mismatch -- is your shell clean?".
+</p><p>This message is usually caused by your startup scripts or remote shell
+facility producing unwanted garbage on the stream that rsync is using
+for its transport. The way to diagnose this problem is to run your
+remote shell like this:
+</p><p></p><blockquote><code>ssh remotehost /bin/true &gt; out.dat</code></blockquote>
+<p>then look at out.dat. If everything is working correctly then out.dat
+should be a zero length file. If you are getting the above error from
+rsync then you will probably find that out.dat contains some text or
+data. Look at the contents and try to work out what is producing
+it. The most common cause is incorrectly configured shell startup
+scripts (such as .cshrc or .profile) that contain output statements
+for non-interactive logins.
+</p><p>If you are having trouble debugging filter patterns, then
+try specifying the <strong>-vv</strong> option.  At this level of verbosity rsync will
+show why each individual file is included or excluded.
+</p><p></p><h2>EXIT VALUES</h2>
+    
+<p></p><dl>
+<p></p><dt><strong><strong>0</strong></strong></dt><dd> Success
+<p></p></dd><dt><strong><strong>1</strong></strong></dt><dd> Syntax or usage error
+<p></p></dd><dt><strong><strong>2</strong></strong></dt><dd> Protocol incompatibility
+<p></p></dd><dt><strong><strong>3</strong></strong></dt><dd> Errors selecting input/output files, dirs
+<p></p></dd><dt><strong><strong>4</strong></strong></dt><dd> Requested action not supported: an attempt
+was made to manipulate 64-bit files on a platform that cannot support
+them; or an option was specified that is supported by the client and
+not by the server.
+<p></p></dd><dt><strong><strong>5</strong></strong></dt><dd> Error starting client-server protocol
+<p></p></dd><dt><strong><strong>6</strong></strong></dt><dd> Daemon unable to append to log-file
+<p></p></dd><dt><strong><strong>10</strong></strong></dt><dd> Error in socket I/O
+<p></p></dd><dt><strong><strong>11</strong></strong></dt><dd> Error in file I/O
+<p></p></dd><dt><strong><strong>12</strong></strong></dt><dd> Error in rsync protocol data stream
+<p></p></dd><dt><strong><strong>13</strong></strong></dt><dd> Errors with program diagnostics
+<p></p></dd><dt><strong><strong>14</strong></strong></dt><dd> Error in IPC code
+<p></p></dd><dt><strong><strong>20</strong></strong></dt><dd> Received SIGUSR1 or SIGINT
+<p></p></dd><dt><strong><strong>21</strong></strong></dt><dd> Some error returned by waitpid()
+<p></p></dd><dt><strong><strong>22</strong></strong></dt><dd> Error allocating core memory buffers
+<p></p></dd><dt><strong><strong>23</strong></strong></dt><dd> Partial transfer due to error
+<p></p></dd><dt><strong><strong>24</strong></strong></dt><dd> Partial transfer due to vanished source files
+<p></p></dd><dt><strong><strong>25</strong></strong></dt><dd> The --max-delete limit stopped deletions
+<p></p></dd><dt><strong><strong>30</strong></strong></dt><dd> Timeout in data send/receive
+</dd></dl>
+<p></p><h2>ENVIRONMENT VARIABLES</h2>
+    
+<p></p><dl>
+<p></p><dt><strong><strong>CVSIGNORE</strong></strong></dt><dd> The CVSIGNORE environment variable supplements any
+ignore patterns in .cvsignore files. See the <strong>--cvs-exclude</strong> option for
+more details.
+<p></p></dd><dt><strong><strong>RSYNC_RSH</strong></strong></dt><dd> The RSYNC_RSH environment variable allows you to
+override the default shell used as the transport for rsync.  Command line
+options are permitted after the command name, just as in the <strong>-e</strong> option.
+<p></p></dd><dt><strong><strong>RSYNC_PROXY</strong></strong></dt><dd> The RSYNC_PROXY environment variable allows you to
+redirect your rsync client to use a web proxy when connecting to a
+rsync daemon. You should set RSYNC_PROXY to a hostname:port pair.
+<p></p></dd><dt><strong><strong>RSYNC_PASSWORD</strong></strong></dt><dd> Setting RSYNC_PASSWORD to the required
+password allows you to run authenticated rsync connections to an rsync
+daemon without user intervention. Note that this does not supply a
+password to a shell transport such as ssh.
+<p></p></dd><dt><strong><strong>USER</strong> or <strong>LOGNAME</strong></strong></dt><dd> The USER or LOGNAME environment variables
+are used to determine the default username sent to an rsync daemon.
+If neither is set, the username defaults to "nobody".
+<p></p></dd><dt><strong><strong>HOME</strong></strong></dt><dd> The HOME environment variable is used to find the user's
+default .cvsignore file.
+</dd></dl>
+<p></p><h2>FILES</h2>
+    
+<p>/etc/rsyncd.conf or rsyncd.conf
+</p><p></p><h2>SEE ALSO</h2>
+    
+<p>rsyncd.conf(5)
+</p><p></p><h2>BUGS</h2>
+    
+<p>times are transferred as *nix time_t values
+</p><p>When transferring to FAT filesystems rsync may re-sync
+unmodified files.
+See the comments on the <strong>--modify-window</strong> option.
+</p><p>file permissions, devices, etc. are transferred as native numerical
+values
+</p><p>see also the comments on the <strong>--delete</strong> option
+</p><p>Please report bugs! See the website at
+<a href="http://rsync.samba.org/">http://rsync.samba.org/</a>
+</p><p></p><h2>VERSION</h2>
+    
+<p>This man page is current for version 2.6.7 of rsync.
+</p><p></p><h2>CREDITS</h2>
+    
+<p>rsync is distributed under the GNU public license.  See the file
+COPYING for details.
+</p><p>A WEB site is available at
+<a href="http://rsync.samba.org/">http://rsync.samba.org/</a>.  The site
+includes an FAQ-O-Matic which may cover questions unanswered by this
+manual page.
+</p><p>The primary ftp site for rsync is
+<a href="ftp://rsync.samba.org/pub/rsync">ftp://rsync.samba.org/pub/rsync</a>.
+</p><p>We would be delighted to hear from you if you like this program.
+</p><p>This program uses the excellent zlib compression library written by
+Jean-loup Gailly and Mark Adler.
+</p><p></p><h2>THANKS</h2>
+    
+<p>Thanks to Richard Brent, Brendan Mackay, Bill Waite, Stephen Rothwell
+and David Bell for helpful suggestions, patches and testing of rsync.
+I've probably missed some people, my apologies if I have.
+</p><p>Especial thanks also to: David Dykstra, Jos Backus, Sebastian Krahmer,
+Martin Pool, Wayne Davison, J.W. Schultz.
+</p><p></p><h2>AUTHOR</h2>
+    
+<p>rsync was originally written by Andrew Tridgell and Paul Mackerras.
+Many people have later contributed to it.
+</p><p>Mailing lists for support and development are available at
+<a href="http://samba.anu.edu.au/ftp/rsync/lists.samba.org">http://lists.samba.org</a>
+
+</p></dd></body></html>
